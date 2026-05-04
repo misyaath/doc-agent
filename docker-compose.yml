@@ -1,0 +1,157 @@
+version: '3.8'
+
+services:
+  # 1. LLM / Ollama Server
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_storage:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    healthcheck:
+      test: [ "CMD", "ollama", "list" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: always
+
+  # 2. Main Text LLM Model Puller
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    command: pull llama3.1:8b
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # 2.1 Embedding Model Puller
+  ollama-embed-init:
+    image: ollama/ollama:latest
+    container_name: ollama-embed-init
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    command: pull nomic-embed-text
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # 2.2 Multimodal / Vision Model Puller
+  ollama-vision-init:
+    image: ollama/ollama:latest
+    container_name: ollama-vision-init
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    command: pull llama3.2-vision:11b
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # 3. Postgres
+  postgres:
+    image: postgres:15-alpine
+    container_name: halasearch_db
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. Qdrant Vector DB
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: always
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+
+  # 5. Unstructured API
+  unstructured:
+    image: quay.io/unstructured-io/unstructured-api:latest
+    container_name: unstructured_api
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    environment:
+      - UNSTRUCTURED_HI_RES_MODEL_NAME=yolox
+      - HF_TOKEN=${HF_TOKEN}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - ONNXRUNTIME_EXECUTION_PROVIDERS=CUDAExecutionProvider
+    volumes:
+      - ./data:/app/data
+    restart: always
+
+  # 6. FastAPI Web Service
+  web-api:
+    build:
+      context: .
+      dockerfile: Docker/web/Dockerfile
+    container_name: agent_web_api
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_URL=http://ollama:11434
+      - UNSTRUCTURED_URL=http://unstructured:8000
+      - TEXT_MODEL=llama3.1:8b
+      - EMBEDDING_MODEL=nomic-embed-text
+      - VISION_MODEL=llama3.2-vision:11b
+    volumes:
+      - ./data:/app/data
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+      unstructured:
+        condition: service_started
+    restart: always
+
+volumes:
+  ollama_storage:
+  pgdata:
+  qdrant_storage:

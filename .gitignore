@@ -1,0 +1,42 @@
+# --- Python & Environments ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+build/
+dist/
+*.egg-info/
+.codex
+Pre-Code/
+uploads/
+
+# --- FastAPI & Backend ---
+# Log files for Uvicorn or Gunicorn
+*.log
+
+# --- LangChain & AI Specific ---
+# Secret API keys (OpenAI, Anthropic, LangChain, etc.)
+.env
+.env.*
+!.env.example
+
+# Local vector database storage (Chroma, FAISS, etc.)
+chroma/
+faiss_index/
+*.db
+*.sqlite
+
+# Large data/model files
+data/raw/
+models/*.bin
+models/*.pth
+models/*.onnx
+
+# --- IDEs & OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+requests
+pydantic
+pydantic-settings
+sqlalchemy
+asyncpg
+qdrant-client
+python-multipart
