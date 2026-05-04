@@ -7,3 +7,5 @@ sqlalchemy
 asyncpg
 qdrant-client
 python-multipart
+alembic
+email-validator
