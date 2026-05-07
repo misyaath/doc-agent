@@ -6,19 +6,19 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
 
-ALLOWED_STAGES = {"uploaded", "extracted", "storage", "enrrich", "embeeding", "done"}
-ALLOWED_STATUS = {"waiting", "started", "processing", "Done", "failed"}
+ALLOWED_STAGES = {"uploaded", "extracted", "normalizer", "enriched", "embedding", "done"}
+ALLOWED_STATUS = {"waiting", "started", "processing", "done", "failed"}
 
 
 class FileProcessStage(Base):
     __tablename__ = "file_process_stages"
     __table_args__ = (
         CheckConstraint(
-            "stage IN ('uploaded','extracted','storage','enrrich','embeeding','done')",
+            "stage IN ('uploaded','extracted','normalizer','enriched','embedding','done')",
             name="ck_file_process_stages_stage",
         ),
         CheckConstraint(
-            "status IN ('waiting','started','processing','Done','failed')",
+            "status IN ('waiting','started','processing','done','failed')",
             name="ck_file_process_stages_status",
         ),
     )

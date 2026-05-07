@@ -9,3 +9,12 @@ qdrant-client
 python-multipart
 alembic
 email-validator
+celery
+redis
+pillow
+docling
+docling-core
+llama-index
+llama-index-vector-stores-qdrant
+llama-index-embeddings-ollama
+qdrant-client

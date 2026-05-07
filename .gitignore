@@ -12,6 +12,7 @@ dist/
 .codex
 Pre-Code/
 uploads/
+extracted_files/
 
 # --- FastAPI & Backend ---
 # Log files for Uvicorn or Gunicorn

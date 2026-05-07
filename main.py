@@ -1,5 +1,6 @@
 from controller.chat_controller import router as chat_router
 from controller.file_controller import router as file_router
+from controller.task_controller import router as task_router
 from fastapi import FastAPI
 
 from controller.user_controller import router as user_router
@@ -15,12 +16,14 @@ app = FastAPI(
         {"name": "users", "description": "User registration and user operations"},
         {"name": "chats", "description": "Chat creation and chat operations"},
         {"name": "files", "description": "File upload operations"},
+        {"name": "tasks", "description": "Celery task monitoring and retries"},
         {"name": "system", "description": "Service health and system endpoints"},
     ],
 )
 app.include_router(user_router)
 app.include_router(chat_router)
 app.include_router(file_router)
+app.include_router(task_router)
 
 
 @app.get("/health", tags=["system"], summary="Health check")

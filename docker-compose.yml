@@ -119,6 +119,52 @@ services:
       - ./data:/app/data
     restart: always
 
+
+  # 7. Redis Queue
+  redis:
+    image: redis:7-alpine
+    container_name: halasearch_redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # 8. Background Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Docker/web/Dockerfile
+    container_name: agent_worker
+    command: celery -A worker.celery_app worker --loglevel=INFO
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=${REDIS_URL}
+      - QDRANT_URL=${QDRANT_URL}
+      - OLLAMA_URL=${OLLAMA_URL}
+      - UNSTRUCTURED_URL=http://unstructured:8000
+      - TEXT_MODEL=${TEXT_MODEL}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - VISION_MODEL=${VISION_MODEL}
+      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - ./data:/app/data
+      - .:/app
+      - hf_cache:/root/.cache/huggingface
+      - docling_cache:/root/.cache/docling
+    depends_on:
+      - redis
+      - postgres
+      - qdrant
+      - ollama
+      - unstructured
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    restart: always
+
   # 6. FastAPI Web Service
   web-api:
     build:
@@ -131,15 +177,17 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - QDRANT_URL=http://qdrant:6333
-      - OLLAMA_URL=http://ollama:11434
+      - QDRANT_URL=${QDRANT_URL}
+      - OLLAMA_URL=${OLLAMA_URL}
       - UNSTRUCTURED_URL=http://unstructured:8000
-      - TEXT_MODEL=llama3.1:8b
-      - EMBEDDING_MODEL=nomic-embed-text
-      - VISION_MODEL=llama3.2-vision:11b
+      - TEXT_MODEL=${TEXT_MODEL}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - VISION_MODEL=${VISION_MODEL}
     volumes:
       - ./data:/app/data
       - .:/app
+      - hf_cache:/root/.cache/huggingface
+      - docling_cache:/root/.cache/docling
     depends_on:
       postgres:
         condition: service_healthy
@@ -155,3 +203,5 @@ volumes:
   ollama_storage:
   pgdata:
   qdrant_storage:
+  hf_cache:
+  docling_cache:
