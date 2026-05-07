@@ -11,6 +11,7 @@ from models.chat import Chat
 from models.file import File as FileModel
 from models.file_process_stage import FileProcessStage
 from schemas.file import FileUploadItemResponse, FileUploadResponse
+from tasks.file_extracter import process_uploaded_file
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -29,10 +30,10 @@ def _is_pdf_file(upload: UploadFile) -> bool:
     description="Uploads multiple PDF files for a chat. Route is protected with Bearer token auth.",
 )
 async def upload_pdf_files(
-    chat_id: str = Form(...),
-    files: list[UploadFile] = File(...),
-    db: AsyncSession = Depends(get_db),
-    user_id: int = Depends(get_current_user_id),
+        chat_id: str = Form(...),
+        files: list[UploadFile] = File(...),
+        db: AsyncSession = Depends(get_db),
+        user_id: int = Depends(get_current_user_id),
 ) -> FileUploadResponse:
     chat = await db.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
     if not chat:
@@ -73,6 +74,14 @@ async def upload_pdf_files(
         stage_record = FileProcessStage(file_id=file_id, stage="uploaded", status="started")
         db.add(record)
         db.add(stage_record)
+
+        process_uploaded_file.delay(
+            file_id=file_id,
+            chat_id=chat_id,
+            user_id=user_id,
+            file_path=str(full_path),
+            filename=upload.filename or generated_name,
+        )
 
         with full_path.open("wb") as out:
             out.write(first_chunk)
