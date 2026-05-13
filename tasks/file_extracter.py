@@ -40,7 +40,7 @@ def process_uploaded_file(
     try:
         config = ExtractionConfig(
             pdf_path=Path(file_path),
-            output_dir=Path(f"extracted_files/{chat_id}/{user_id}"),
+            output_dir=Path(f"extracted_files/{chat_id}/{file_id}"),
         )
         extractor = DoclingPdfExtractor(config=config)
         result = extractor.run()
@@ -58,7 +58,7 @@ def process_uploaded_file(
         print(f"normalizing... {chat_id}-{file_id}")
         _upsert_stage_status(file_id=file_id, stage_name="normalizer", status="processing")
 
-        file_base_path = Path(f"extracted_files/{chat_id}/{user_id}/")
+        file_base_path = Path(f"extracted_files/{chat_id}/{file_id}/")
 
         normalized = normalize_docling_json_with_heading_metadata(
             document_json_path=f"{file_base_path}/document.json",
@@ -101,6 +101,8 @@ def process_uploaded_file(
         print(f"embedding... {chat_id}-{file_id}")
         service = RagQdrantIngestionService(
             RagIndexingConfig(
+                chat_id=str(chat_id),
+                file_id=str(file_id),
                 source_file_path=path,
                 collection_name="pdf_rag",
             )

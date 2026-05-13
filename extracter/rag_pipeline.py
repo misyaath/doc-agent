@@ -45,6 +45,8 @@ class VisualElementEnricher:
                 image_path = self._resolve_picture_path(element)
                 if not image_path:
                     continue
+
+                print(f"Analyzing picture...: {image_path} \n")
                 result = self._vision_service.analyze_figure(
                     image_path=image_path,
                     caption=element.get("caption"),
@@ -56,6 +58,7 @@ class VisualElementEnricher:
                 table_path = self._resolve_table_path(element)
                 if not table_path:
                     continue
+                print(f"Analyzing table...: {table_path} \n")
                 result = self._vision_service.analyze_table(
                     image_path=table_path,
                     caption=element.get("caption"),

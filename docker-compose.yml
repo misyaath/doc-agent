@@ -165,6 +165,33 @@ services:
               capabilities: [ gpu ]
     restart: always
 
+  # 9. Docling / RAG Extraction Visual Viewer
+  docling-viewer:
+    build:
+      context: .
+      dockerfile: Docker/web/Dockerfile
+    container_name: docling_viewer
+    command: streamlit run tools/docling_viewer.py --server.address=0.0.0.0 --server.port=8501
+    ports:
+      - "8501:8501"
+    environment:
+      - QDRANT_URL=${QDRANT_URL}
+      - OLLAMA_URL=${OLLAMA_URL}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./extracted_files:/app/extracted_files
+      - ./data:/app/data
+      - .:/app
+      - hf_cache:/root/.cache/huggingface
+      - docling_cache:/root/.cache/docling
+    depends_on:
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+    restart: always
+
   # 6. FastAPI Web Service
   web-api:
     build:

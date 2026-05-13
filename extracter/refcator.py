@@ -19,7 +19,7 @@ from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 
 MAX_EMBED_CHARS = int(os.getenv("MAX_EMBED_CHARS", "512"))
-MAX_ATOMIC_CHARS = int(os.getenv("MAX_ATOMIC_CHARS", "700"))
+MAX_ATOMIC_CHARS = int(os.getenv("MAX_ATOMIC_CHARS", "2500"))
 CHUNK_OVERLAP_CHARS = int(os.getenv("CHUNK_OVERLAP_CHARS", "80"))
 
 
@@ -314,7 +314,6 @@ class EmbeddingModelFactory:
         return OllamaEmbedding(
             model_name=self._config.embedding_model,
             base_url=self._config.ollama_url,
-            embed_batch_size=1
         )
 
 
@@ -334,11 +333,6 @@ class NodeBuilder:
         self._policy = policy or RagIndexingPolicy()
         self._length_guard = TokenLengthGuard(
             max_tokens=MAX_EMBED_CHARS,
-            overlap_tokens=CHUNK_OVERLAP_CHARS,
-        )
-
-        self._atomic_length_guard = TokenLengthGuard(
-            max_tokens=MAX_ATOMIC_CHARS,
             overlap_tokens=CHUNK_OVERLAP_CHARS,
         )
 
@@ -375,73 +369,42 @@ class NodeBuilder:
             if not text.strip():
                 continue
 
-            metadata = self._metadata_builder.build(unit)
-
-            # 1. TokenLengthGuard BEFORE semantic splitter
-            guarded_chunks = self._length_guard.split(text)
-
-            for chunk_index, chunk_text in enumerate(guarded_chunks):
-                text_docs.append(
-                    Document(
-                        text=chunk_text,
-                        metadata={
-                            **metadata,
-                            "pre_semantic_chunk_index": chunk_index,
-                            "pre_semantic_chunk_count": len(guarded_chunks),
-                            "pre_semantic_chunking_strategy": "token_length_guard",
-                        },
-                    )
+            text_docs.append(
+                Document(
+                    text=text,
+                    metadata=self._metadata_builder.build(unit),
                 )
+            )
 
         if not text_docs:
             return []
 
-        # 2. Semantic splitter only receives safe-size documents
         splitter = SemanticSplitterNodeParser(
             buffer_size=1,
             breakpoint_percentile_threshold=95,
             embed_model=embed_model,
-            include_metadata=False,
+            include_metadata=True,
             include_prev_next_rel=True,
         )
 
-        semantic_nodes = splitter.get_nodes_from_documents(text_docs)
+        nodes = splitter.get_nodes_from_documents(text_docs)
 
         final_nodes: list[TextNode] = []
 
-        for i, node in enumerate(semantic_nodes):
+        for i, node in enumerate(nodes):
             source_ref = node.metadata.get("source_ref", "unknown")
-            pre_chunk_index = node.metadata.get("pre_semantic_chunk_index", 0)
 
-            # 3. Final TokenLengthGuard safety check
-            final_chunks = self._length_guard.split(node.text)
-
-            for final_index, final_text in enumerate(final_chunks):
-                chunking_strategy = (
-                    "semantic"
-                    if len(final_chunks) == 1
-                    else "semantic_token_length_guard"
+            node.id_ = str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"{self._config.doc_id}:{source_ref}:semantic:{i}",
                 )
+            )
 
-                safe_node = TextNode(
-                    id_=str(
-                        uuid.uuid5(
-                            uuid.NAMESPACE_URL,
-                            f"{self._config.doc_id}:{source_ref}:semantic:{pre_chunk_index}:{i}:{final_index}",
-                        )
-                    ),
-                    text=final_text,
-                    metadata={
-                        **node.metadata,
-                        "chunk_id": f"{self._config.doc_id}_text_{len(final_nodes):05d}",
-                        "chunking_strategy": chunking_strategy,
-                        "semantic_node_index": i,
-                        "final_chunk_index": final_index,
-                        "final_chunk_count": len(final_chunks),
-                    },
-                )
+            node.metadata["chunk_id"] = f"{self._config.doc_id}_text_{i:05d}"
+            node.metadata["chunking_strategy"] = "semantic"
 
-                final_nodes.append(exclude_metadata_from_embedding(safe_node))
+            final_nodes.append(node)
 
         return final_nodes
 
@@ -465,34 +428,22 @@ class NodeBuilder:
             metadata = self._metadata_builder.build(unit)
             source_ref = metadata.get("source_ref", unit.get("id", "unknown"))
 
-            # Tables/pictures do not use SemanticSplitterNodeParser
-            guarded_chunks = self._atomic_length_guard.split(text)
+            node = TextNode(
+                id_=str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"{self._config.doc_id}:{source_ref}:atomic",
+                    )
+                ),
+                text=text,
+                metadata={
+                    **metadata,
+                    "chunk_id": f"{self._config.doc_id}_{unit_type}_{unit.get('order')}",
+                    "chunking_strategy": "atomic",
+                },
+            )
 
-            for chunk_index, chunk_text in enumerate(guarded_chunks):
-                chunking_strategy = (
-                    "atomic"
-                    if len(guarded_chunks) == 1
-                    else "atomic_token_length_guard"
-                )
-
-                node = TextNode(
-                    id_=str(
-                        uuid.uuid5(
-                            uuid.NAMESPACE_URL,
-                            f"{self._config.doc_id}:{source_ref}:atomic:{chunk_index}",
-                        )
-                    ),
-                    text=chunk_text,
-                    metadata={
-                        **metadata,
-                        "chunk_id": f"{self._config.doc_id}_{unit_type}_{unit.get('order')}_{chunk_index}",
-                        "chunking_strategy": chunking_strategy,
-                        "atomic_chunk_index": chunk_index,
-                        "atomic_chunk_count": len(guarded_chunks),
-                    },
-                )
-
-                nodes.append(exclude_metadata_from_embedding(node))
+            nodes.append(node)
 
         return nodes
 
@@ -527,10 +478,8 @@ class QdrantIndexSaver:
         )
 
 
-def exclude_metadata_from_embedding(node: TextNode) -> TextNode:
-    node.excluded_embed_metadata_keys = list(node.metadata.keys())
-    node.excluded_llm_metadata_keys = []
-    return node
+import re
+import tiktoken
 
 
 class TokenLengthGuard:

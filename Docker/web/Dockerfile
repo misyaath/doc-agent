@@ -32,6 +32,8 @@ RUN pip install --no-cache-dir \
     torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/cu121
 
+RUN pip install streamlit pymupdf pillow pandas
+
 COPY . .
 
 EXPOSE 8080
