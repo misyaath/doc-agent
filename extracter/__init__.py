@@ -16,7 +16,7 @@ from .rag_pipeline import (
     RagUnitBuildResult,
     VisualElementEnricher,
 )
-from .qdrant_indexer import RagIndexingConfig, RagQdrantIngestionService
+from .qdrant_indexer import RagIndexingConfig, RagQdrantIngestionService, QdrantHybridSearchService
 
 __all__ = [
     "DoclingPdfExtractor",
@@ -34,4 +34,5 @@ __all__ = [
     "RagUnitBuildResult",
     "RagIndexingConfig",
     "RagQdrantIngestionService",
+    "QdrantHybridSearchService",
 ]

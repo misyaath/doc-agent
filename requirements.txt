@@ -20,3 +20,4 @@ llama-index-embeddings-ollama
 qdrant-client
 re
 tiktoken
+llama-index-core

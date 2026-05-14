@@ -12,9 +12,10 @@ import re
 import tiktoken
 
 import qdrant_client
+from qdrant_client import models
 from llama_index.core import Document, StorageContext, VectorStoreIndex
 from llama_index.core.node_parser import SemanticSplitterNodeParser
-from llama_index.core.schema import TextNode
+from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 
@@ -25,6 +26,7 @@ CHUNK_OVERLAP_CHARS = int(os.getenv("CHUNK_OVERLAP_CHARS", "80"))
 
 @dataclass(frozen=True)
 class RagIndexingConfig:
+    """Configuration required to build and persist RAG embeddings into Qdrant."""
     doc_id: str | None = None
     doc_title: str | None = None
     source_file_path: str | Path | None = None
@@ -39,7 +41,17 @@ class RagIndexingConfig:
 
 
 class DocumentIdentityBuilder:
+    """Builds stable document identity fields (title and doc_id) for indexing."""
+
     def clean_text(self, value: Any) -> str:
+        """Normalize whitespace and line breaks for title-like text values.
+
+        Args:
+            value: Raw value that may contain title text.
+
+        Returns:
+            Cleaned single-line text, or empty string for falsy input.
+        """
         if not value:
             return ""
         return " ".join(str(value).replace("\n", " ").split()).strip()
@@ -49,6 +61,15 @@ class DocumentIdentityBuilder:
             rag_units: list[dict[str, Any]],
             fallback_file_path: str | Path | None = None,
     ) -> str:
+        """Infer a document title from RAG units, then fallback to filename.
+
+        Args:
+            rag_units: Normalized units used for indexing.
+            fallback_file_path: Optional source file path used when title is missing.
+
+        Returns:
+            Best-effort document title.
+        """
         sorted_units = sorted(rag_units, key=lambda x: x.get("order", 0))
 
         # Prefer first heading / section title.
@@ -77,13 +98,14 @@ class DocumentIdentityBuilder:
             doc_title: str,
             source_file_path: str | Path | None = None,
     ) -> str:
-        """
-        Stable UUID.
+        """Create a stable UUID for a document identity.
 
-        If source_file_path exists:
-            doc_id = UUID(title + file hash)
-        Else:
-            doc_id = UUID(title)
+        Args:
+            doc_title: Final resolved title for the document.
+            source_file_path: Optional source file path used for hashing.
+
+        Returns:
+            Deterministic UUID string based on title and optional file hash.
         """
         if source_file_path and Path(source_file_path).exists():
             file_hash = self._compute_file_sha256(source_file_path)
@@ -98,6 +120,15 @@ class DocumentIdentityBuilder:
             config: RagIndexingConfig,
             rag_units: list[dict[str, Any]],
     ) -> RagIndexingConfig:
+        """Resolve missing identity fields in config.
+
+        Args:
+            config: Input indexing configuration.
+            rag_units: RAG units used to infer title and id.
+
+        Returns:
+            New `RagIndexingConfig` with resolved `doc_title` and `doc_id`.
+        """
         doc_title = config.doc_title or self.detect_title(
             rag_units=rag_units,
             fallback_file_path=config.source_file_path,
@@ -122,6 +153,14 @@ class DocumentIdentityBuilder:
 
     @staticmethod
     def _compute_file_sha256(file_path: str | Path) -> str:
+        """Compute SHA-256 hash for a source file.
+
+        Args:
+            file_path: Path to file that should be hashed.
+
+        Returns:
+            Hex digest of file content.
+        """
         path = Path(file_path)
         digest = hashlib.sha256()
 
@@ -133,12 +172,32 @@ class DocumentIdentityBuilder:
 
 
 class RagUnitLoader:
+    """Loads serialized RAG units from disk."""
+
     def load(self, path: str | Path) -> list[dict[str, Any]]:
+        """Read and parse a JSON file into RAG unit dictionaries.
+
+        Args:
+            path: JSON file path containing serialized rag units.
+
+        Returns:
+            List of rag unit dictionaries.
+        """
         return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 class JsonSafetyCleaner:
+    """Ensures metadata values are JSON-serializable before persistence."""
+
     def clean_value(self, value: Any) -> Any:
+        """Ensure value can be serialized to JSON.
+
+        Args:
+            value: Arbitrary metadata value.
+
+        Returns:
+            Original value if JSON-serializable, otherwise string representation.
+        """
         try:
             json.dumps(value, ensure_ascii=False)
             return value
@@ -146,6 +205,14 @@ class JsonSafetyCleaner:
             return str(value)
 
     def compact_bbox(self, bbox: Any) -> Any:
+        """Reduce bounding box payload to required metadata fields.
+
+        Args:
+            bbox: Raw bbox object from rag unit metadata.
+
+        Returns:
+            Compact bbox dictionary or unchanged input when not a dict.
+        """
         if not isinstance(bbox, dict):
             return bbox
 
@@ -159,7 +226,17 @@ class JsonSafetyCleaner:
 
 
 class RagIndexingPolicy:
+    """Contains inclusion rules for whether a unit should be indexed."""
+
     def should_index(self, unit: dict[str, Any]) -> bool:
+        """Evaluate whether a unit should be indexed.
+
+        Args:
+            unit: Single rag unit with type-specific metadata flags.
+
+        Returns:
+            `True` if unit should be indexed, otherwise `False`.
+        """
         unit_type = unit.get("type")
 
         if unit_type == "picture":
@@ -174,17 +251,34 @@ class RagIndexingPolicy:
 
 
 class MetadataBuilder:
+    """Builds normalized metadata attached to each vector node."""
+
     def __init__(
             self,
             config: RagIndexingConfig,
             cleaner: JsonSafetyCleaner | None = None,
             policy: RagIndexingPolicy | None = None,
     ) -> None:
+        """Initialize metadata builder dependencies.
+
+        Args:
+            config: Runtime indexing configuration.
+            cleaner: Optional metadata value sanitizer.
+            policy: Optional indexing policy helper.
+        """
         self._config = config
         self._cleaner = cleaner or JsonSafetyCleaner()
         self._policy = policy or RagIndexingPolicy()
 
     def build(self, unit: dict[str, Any]) -> dict[str, Any]:
+        """Create cleaned metadata payload for one rag unit.
+
+        Args:
+            unit: Single rag unit to convert into metadata.
+
+        Returns:
+            JSON-safe metadata dictionary for vector node storage.
+        """
         table_vision = unit.get("table_vision") or {}
         vision_metadata = unit.get("vision_metadata") or {}
 
@@ -258,7 +352,14 @@ class MetadataBuilder:
 
 
 class EmbeddingTextBuilder:
+    """Builds final text payload used as embedding input for each unit."""
+
     def __init__(self, config: RagIndexingConfig) -> None:
+        """Store runtime configuration for embedding text construction.
+
+        Args:
+            config: Runtime indexing configuration.
+        """
         self._config = config
 
     def build(self, unit: dict[str, Any]) -> str:
@@ -275,6 +376,12 @@ class EmbeddingTextBuilder:
         - RAG search text
 
         So we use unit["text"] directly and only add lightweight document/page/type context.
+
+        Args:
+            unit: Single rag unit containing prepared searchable text.
+
+        Returns:
+            Final text used as embedding input.
         """
         prepared_text = (unit.get("text") or "").strip()
 
@@ -307,10 +414,22 @@ class EmbeddingTextBuilder:
 
 
 class EmbeddingModelFactory:
+    """Factory for creating the embedding model instance used in indexing."""
+
     def __init__(self, config: RagIndexingConfig) -> None:
+        """Store runtime configuration for embedding model creation.
+
+        Args:
+            config: Runtime indexing configuration.
+        """
         self._config = config
 
     def create(self) -> OllamaEmbedding:
+        """Instantiate and return the configured Ollama embedding model.
+
+        Returns:
+            Configured `OllamaEmbedding` instance.
+        """
         return OllamaEmbedding(
             model_name=self._config.embedding_model,
             base_url=self._config.ollama_url,
@@ -319,6 +438,8 @@ class EmbeddingModelFactory:
 
 
 class NodeBuilder:
+    """Converts rag units into `TextNode` objects ready for vector indexing."""
+
     def __init__(
             self,
             config: RagIndexingConfig,
@@ -327,6 +448,15 @@ class NodeBuilder:
             model_factory: EmbeddingModelFactory,
             policy: RagIndexingPolicy | None = None,
     ) -> None:
+        """Initialize node builder services.
+
+        Args:
+            config: Runtime indexing configuration.
+            metadata_builder: Builds node metadata from rag units.
+            text_builder: Builds embedding text from rag units.
+            model_factory: Creates embedding model for semantic splitting.
+            policy: Optional indexing policy helper.
+        """
         self._config = config
         self._metadata_builder = metadata_builder
         self._text_builder = text_builder
@@ -343,6 +473,14 @@ class NodeBuilder:
         )
 
     def build_all(self, rag_units: list[dict[str, Any]]) -> list[TextNode]:
+        """Build semantic and atomic nodes from all indexable rag units.
+
+        Args:
+            rag_units: Source rag units from normalization/enrichment pipeline.
+
+        Returns:
+            List of text nodes ready for vector indexing.
+        """
         embed_model = self._model_factory.create()
 
         text_nodes = self._build_semantic_text_nodes(
@@ -356,11 +494,46 @@ class NodeBuilder:
 
         return text_nodes + atomic_nodes
 
+    def _source_relationships(self) -> dict[NodeRelationship, RelatedNodeInfo]:
+        """Attach source document identity so LlamaIndex/Qdrant ref_doc_id is not None."""
+        if not self._config.doc_id:
+            return {}
+
+        return {
+            NodeRelationship.SOURCE: RelatedNodeInfo(
+                node_id=self._config.doc_id,
+                metadata={
+                    "doc_id": self._config.doc_id,
+                    "doc_title": self._config.doc_title,
+                    "chat_id": self._config.chat_id,
+                    "file_id": self._config.file_id,
+                },
+            )
+        }
+
+    def _source_document_id(self, source_ref: Any) -> str:
+        """Create stable source Document id for semantic pre-split documents."""
+        return str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"{self._config.doc_id}:{source_ref}:source-document",
+            )
+        )
+
     def _build_semantic_text_nodes(
             self,
             rag_units: list[dict[str, Any]],
             embed_model: OllamaEmbedding,
     ) -> list[TextNode]:
+        """Build semantically split nodes for textual/group content.
+
+        Args:
+            rag_units: Source rag units.
+            embed_model: Embedding model used by semantic splitter.
+
+        Returns:
+            List of semantic text nodes.
+        """
         text_docs: list[Document] = []
 
         for unit in rag_units:
@@ -381,11 +554,18 @@ class NodeBuilder:
             guarded_chunks = self._length_guard.split(text)
 
             for chunk_index, chunk_text in enumerate(guarded_chunks):
+                source_ref = metadata.get("source_ref", unit.get("id", "unknown"))
+                source_doc_id = self._source_document_id(source_ref)
+
                 text_docs.append(
                     Document(
+                        id_=source_doc_id,
                         text=chunk_text,
                         metadata={
                             **metadata,
+                            "document_id": self._config.doc_id,
+                            "ref_doc_id": self._config.doc_id,
+                            "source_document_id": source_doc_id,
                             "pre_semantic_chunk_index": chunk_index,
                             "pre_semantic_chunk_count": len(guarded_chunks),
                             "pre_semantic_chunking_strategy": "token_length_guard",
@@ -401,7 +581,10 @@ class NodeBuilder:
             buffer_size=1,
             breakpoint_percentile_threshold=95,
             embed_model=embed_model,
-            include_metadata=False,
+            # Keep metadata on produced TextNode objects.
+            # If this is False in your installed LlamaIndex version, the semantic nodes
+            # may only keep chunk metadata and drop doc/page/source metadata.
+            include_metadata=True,
             include_prev_next_rel=True,
         )
 
@@ -423,6 +606,18 @@ class NodeBuilder:
                     else "semantic_token_length_guard"
                 )
 
+                node_metadata = {
+                    **node.metadata,
+                    "document_id": self._config.doc_id,
+                    "doc_id": self._config.doc_id,
+                    "ref_doc_id": self._config.doc_id,
+                    "chunk_id": f"{self._config.doc_id}_text_{len(final_nodes):05d}",
+                    "chunking_strategy": chunking_strategy,
+                    "semantic_node_index": i,
+                    "final_chunk_index": final_index,
+                    "final_chunk_count": len(final_chunks),
+                }
+
                 safe_node = TextNode(
                     id_=str(
                         uuid.uuid5(
@@ -431,14 +626,8 @@ class NodeBuilder:
                         )
                     ),
                     text=final_text,
-                    metadata={
-                        **node.metadata,
-                        "chunk_id": f"{self._config.doc_id}_text_{len(final_nodes):05d}",
-                        "chunking_strategy": chunking_strategy,
-                        "semantic_node_index": i,
-                        "final_chunk_index": final_index,
-                        "final_chunk_count": len(final_chunks),
-                    },
+                    metadata=node_metadata,
+                    relationships=self._source_relationships(),
                 )
 
                 final_nodes.append(exclude_metadata_from_embedding(safe_node))
@@ -446,6 +635,14 @@ class NodeBuilder:
         return final_nodes
 
     def _build_atomic_nodes(self, rag_units: list[dict[str, Any]]) -> list[TextNode]:
+        """Build non-semantic (atomic) nodes for picture/table content.
+
+        Args:
+            rag_units: Source rag units.
+
+        Returns:
+            List of atomic text nodes.
+        """
         nodes: list[TextNode] = []
 
         for unit in rag_units:
@@ -475,6 +672,17 @@ class NodeBuilder:
                     else "atomic_token_length_guard"
                 )
 
+                node_metadata = {
+                    **metadata,
+                    "document_id": self._config.doc_id,
+                    "doc_id": self._config.doc_id,
+                    "ref_doc_id": self._config.doc_id,
+                    "chunk_id": f"{self._config.doc_id}_{unit_type}_{unit.get('order')}_{chunk_index}",
+                    "chunking_strategy": chunking_strategy,
+                    "atomic_chunk_index": chunk_index,
+                    "atomic_chunk_count": len(guarded_chunks),
+                }
+
                 node = TextNode(
                     id_=str(
                         uuid.uuid5(
@@ -483,13 +691,8 @@ class NodeBuilder:
                         )
                     ),
                     text=chunk_text,
-                    metadata={
-                        **metadata,
-                        "chunk_id": f"{self._config.doc_id}_{unit_type}_{unit.get('order')}_{chunk_index}",
-                        "chunking_strategy": chunking_strategy,
-                        "atomic_chunk_index": chunk_index,
-                        "atomic_chunk_count": len(guarded_chunks),
-                    },
+                    metadata=node_metadata,
+                    relationships=self._source_relationships(),
                 )
 
                 nodes.append(exclude_metadata_from_embedding(node))
@@ -498,56 +701,188 @@ class NodeBuilder:
 
 
 class QdrantIndexSaver:
+    """Persists prepared nodes into Qdrant with dense + BM25 sparse vectors.
+
+    This replaces the pure LlamaIndex `QdrantVectorStore` save path because hybrid
+    search needs two named vectors on every point:
+    - `dense`: semantic vector from Ollama / nomic-embed-text
+    - `bm25`: sparse lexical vector from Qdrant BM25
+    """
+
+    DENSE_VECTOR_NAME = "dense"
+    SPARSE_VECTOR_NAME = "bm25"
+    BM25_MODEL_NAME = "Qdrant/bm25"
+
     def __init__(
             self,
             config: RagIndexingConfig,
             model_factory: EmbeddingModelFactory,
     ) -> None:
+        """Initialize saver dependencies.
+
+        Args:
+            config: Runtime indexing configuration.
+            model_factory: Creates dense embed model for vector indexing.
+        """
         self._config = config
         self._model_factory = model_factory
+        self._client = qdrant_client.QdrantClient(url=self._config.qdrant_url)
 
-    def save(self, nodes: list[TextNode]) -> VectorStoreIndex:
-        client = qdrant_client.QdrantClient(
-            url=self._config.qdrant_url,
-        )
+    def save(self, nodes: list[TextNode]) -> dict[str, Any]:
+        """Create a hybrid Qdrant collection and write nodes into it.
 
-        vector_store = QdrantVectorStore(
-            client=client,
+        Args:
+            nodes: Final text nodes prepared for indexing.
+
+        Returns:
+            Summary of saved points.
+        """
+        if not nodes:
+            return {"collection_name": self._config.collection_name, "points_count": 0}
+
+        dense_model = self._model_factory.create()
+        dense_size = self._detect_dense_vector_size(dense_model)
+        self._ensure_hybrid_collection(dense_size=dense_size)
+
+        avg_len = self._average_document_length(nodes)
+        points: list[models.PointStruct] = []
+
+        for node in nodes:
+            dense_vector = dense_model.get_text_embedding(node.text)
+            payload = self._build_payload(node=node)
+
+            points.append(
+                models.PointStruct(
+                    id=node.node_id,
+                    vector={
+                        self.DENSE_VECTOR_NAME: dense_vector,
+                        self.SPARSE_VECTOR_NAME: models.Document(
+                            text=node.text,
+                            model=self.BM25_MODEL_NAME,
+                            options={"avg_len": avg_len},
+                        ),
+                    },
+                    payload=payload,
+                )
+            )
+
+        self._client.upsert(
             collection_name=self._config.collection_name,
+            points=points,
+            wait=True,
         )
 
-        storage_context = StorageContext.from_defaults(
-            vector_store=vector_store,
+        return {
+            "collection_name": self._config.collection_name,
+            "points_count": len(points),
+            "dense_vector_name": self.DENSE_VECTOR_NAME,
+            "sparse_vector_name": self.SPARSE_VECTOR_NAME,
+            "bm25_model": self.BM25_MODEL_NAME,
+        }
+
+    def _detect_dense_vector_size(self, dense_model: OllamaEmbedding) -> int:
+        """Detect dense vector dimension from the configured embedding model."""
+        sample_vector = dense_model.get_text_embedding("dimension check")
+        return len(sample_vector)
+
+    def _ensure_hybrid_collection(self, dense_size: int) -> None:
+        """Create collection configured for dense semantic + BM25 sparse vectors."""
+        if self._client.collection_exists(self._config.collection_name):
+            # Existing collection must already have named vectors `dense` and `bm25`.
+            # If your old collection was created by LlamaIndex with an unnamed vector,
+            # delete/recreate it before re-ingesting.
+            return
+
+        self._client.create_collection(
+            collection_name=self._config.collection_name,
+            vectors_config={
+                self.DENSE_VECTOR_NAME: models.VectorParams(
+                    size=dense_size,
+                    distance=models.Distance.COSINE,
+                )
+            },
+            sparse_vectors_config={
+                self.SPARSE_VECTOR_NAME: models.SparseVectorParams(
+                    modifier=models.Modifier.IDF,
+                )
+            },
         )
 
-        return VectorStoreIndex(
-            nodes=nodes,
-            storage_context=storage_context,
-            embed_model=self._model_factory.create(),
-        )
+    def _average_document_length(self, nodes: list[TextNode]) -> float:
+        """Estimate average token/word length for BM25 normalization."""
+        lengths = [max(1, len((node.text or "").split())) for node in nodes]
+        return sum(lengths) / max(1, len(lengths))
+
+    def _build_payload(self, node: TextNode) -> dict[str, Any]:
+        """Build Qdrant payload from TextNode metadata and text."""
+        payload = {
+            **(node.metadata or {}),
+            "text": node.text,
+            "node_id": node.node_id,
+            "document_id": (node.metadata or {}).get("document_id") or self._config.doc_id,
+            "doc_id": (node.metadata or {}).get("doc_id") or self._config.doc_id,
+            "ref_doc_id": (node.metadata or {}).get("ref_doc_id") or self._config.doc_id,
+        }
+
+        # Make sure payload is JSON-safe.
+        cleaner = JsonSafetyCleaner()
+        return {key: cleaner.clean_value(value) for key, value in payload.items() if value is not None}
 
 
 def exclude_metadata_from_embedding(node: TextNode) -> TextNode:
+    """Exclude metadata fields from embedding text while retaining LLM metadata.
+
+    Args:
+        node: Node whose metadata should be excluded from embedding input.
+
+    Returns:
+        Same node instance with exclusion settings updated.
+    """
     node.excluded_embed_metadata_keys = list(node.metadata.keys())
     node.excluded_llm_metadata_keys = []
     return node
 
 
 class TokenLengthGuard:
+    """Token-aware text splitter with overlap to stay within model limits."""
+
     def __init__(
             self,
             max_tokens: int = 512,
             overlap_tokens: int = 80,
             encoding_name: str = "cl100k_base",
     ) -> None:
+        """Initialize token-aware splitter settings.
+
+        Args:
+            max_tokens: Maximum tokens allowed per chunk.
+            overlap_tokens: Token overlap between adjacent chunks.
+            encoding_name: Tiktoken encoding name used for token counting.
+        """
         self._max_tokens = max_tokens
         self._overlap_tokens = overlap_tokens
         self._encoding = tiktoken.get_encoding(encoding_name)
 
     def count_tokens(self, text: str) -> int:
+        """Count tokens for text using configured tokenizer.
+
+        Args:
+            text: Input text.
+
+        Returns:
+            Number of tokens.
+        """
         return len(self._encoding.encode(text or ""))
 
     def split(self, text: str) -> list[str]:
+        """Split text into overlapping chunks constrained by `max_tokens`.
+
+        Args:
+            text: Input text to split.
+
+        Returns:
+            List of chunks that satisfy token constraints.
+        """
         text = (text or "").strip()
 
         if not text:
@@ -595,11 +930,27 @@ class TokenLengthGuard:
         return chunks
 
     def _split_sentences(self, text: str) -> list[str]:
+        """Split text into sentence-like segments to preserve boundaries.
+
+        Args:
+            text: Input text.
+
+        Returns:
+            Sentence-like text segments.
+        """
         # Keeps sentence boundaries better than plain character slicing.
         parts = re.split(r"(?<=[.!?])\s+|\n{2,}", text)
         return [part.strip() for part in parts if part.strip()]
 
     def _build_overlap(self, sentences: list[str]) -> str:
+        """Build trailing overlap text under overlap token budget.
+
+        Args:
+            sentences: Candidate sentences from current chunk.
+
+        Returns:
+            Combined overlap text.
+        """
         overlap: list[str] = []
         total_tokens = 0
 
@@ -615,6 +966,14 @@ class TokenLengthGuard:
         return " ".join(overlap).strip()
 
     def _split_large_sentence(self, sentence: str) -> list[str]:
+        """Hard-split a long sentence by token windows with overlap.
+
+        Args:
+            sentence: Single sentence exceeding token budget.
+
+        Returns:
+            List of token-window chunks.
+        """
         tokens = self._encoding.encode(sentence)
 
         chunks: list[str] = []
@@ -637,7 +996,14 @@ class TokenLengthGuard:
 
 
 class RagQdrantIngestionService:
+    """Orchestrates file-based RAG unit ingestion into Qdrant."""
+
     def __init__(self, config: RagIndexingConfig) -> None:
+        """Initialize ingestion service with input configuration.
+
+        Args:
+            config: Input indexing configuration.
+        """
         self._input_config = config
         self._loader = RagUnitLoader()
         self._identity_builder = DocumentIdentityBuilder()
@@ -646,6 +1012,14 @@ class RagQdrantIngestionService:
             self,
             config: RagIndexingConfig,
     ) -> tuple[NodeBuilder, QdrantIndexSaver]:
+        """Wire runtime collaborators needed to transform and persist nodes.
+
+        Args:
+            config: Resolved runtime indexing configuration.
+
+        Returns:
+            Tuple of `(NodeBuilder, QdrantIndexSaver)`.
+        """
         policy = RagIndexingPolicy()
         cleaner = JsonSafetyCleaner()
 
@@ -679,6 +1053,14 @@ class RagQdrantIngestionService:
         return node_builder, saver
 
     def ingest_from_file(self, rag_units_path: str | Path) -> dict[str, Any]:
+        """Load RAG units, build nodes, index in Qdrant, and return summary metadata.
+
+        Args:
+            rag_units_path: Path to JSON file containing rag units.
+
+        Returns:
+            Summary dictionary with identity, collection, and node count.
+        """
         rag_units = self._loader.load(rag_units_path)
 
         runtime_config = self._identity_builder.resolve(
@@ -689,7 +1071,7 @@ class RagQdrantIngestionService:
         node_builder, saver = self._build_runtime_services(runtime_config)
 
         nodes = node_builder.build_all(rag_units)
-        saver.save(nodes)
+        save_result = saver.save(nodes)
 
         return {
             "chat_id": runtime_config.chat_id,
@@ -698,4 +1080,5 @@ class RagQdrantIngestionService:
             "doc_title": runtime_config.doc_title,
             "collection_name": runtime_config.collection_name,
             "nodes_count": len(nodes),
+            "save_result": save_result,
         }
