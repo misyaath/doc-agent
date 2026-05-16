@@ -13,6 +13,8 @@ from alembic import context
 from database import Base
 from models.user import User
 from models.chat import Chat
+from models.file import File
+from models.file_process_stage import FileProcessStage
 
 
 # this is the Alembic Config object, which provides

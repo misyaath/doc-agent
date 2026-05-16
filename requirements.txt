@@ -18,6 +18,9 @@ llama-index
 llama-index-vector-stores-qdrant
 llama-index-embeddings-ollama
 qdrant-client
-re
 tiktoken
 llama-index-core
+langchain-ollama
+langchain-core
+langgraph
+fastembed
