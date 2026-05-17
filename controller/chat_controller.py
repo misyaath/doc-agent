@@ -1,12 +1,8 @@
-import uuid
-
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import get_db
 from middleware.auth_middleware import get_current_user_id
-from models.chat import Chat
 from schemas.chat import ChatCreateResponse
+from services.chat_service import ChatService, get_chat_service
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
@@ -19,11 +15,7 @@ router = APIRouter(prefix="/chats", tags=["chats"])
     description="Creates a new chat for the authenticated user and returns user and chat identifiers.",
 )
 async def create_chat(
-    db: AsyncSession = Depends(get_db),
+    service: ChatService = Depends(get_chat_service),
     user_id: int = Depends(get_current_user_id),
 ) -> ChatCreateResponse:
-    chat_id = str(uuid.uuid4())
-    chat = Chat(id=chat_id, user_id=user_id)
-    db.add(chat)
-    await db.commit()
-    return ChatCreateResponse(user_id=user_id, chat_id=chat_id)
+    return await service.create_chat(user_id=user_id)

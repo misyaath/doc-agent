@@ -1,11 +1,15 @@
 import json
-import os
 from pathlib import Path
 import asyncio
+from asyncio import AbstractEventLoop
 from dataclasses import dataclass
+from typing import Protocol
 
 from sqlalchemy import select
 
+from core.logging import get_logger
+from core.settings import settings
+from domain.file_process import FileStage, FileStageStatus
 from database import SessionLocal
 from extracter import ExtractionConfig, DoclingPdfExtractor, RagIndexingConfig
 from extracter.document_title_exctracter import DocumentTitleDetector
@@ -13,9 +17,11 @@ from extracter.markdown_image_vision_processor import MarkdownImageVisionProcess
 from extracter.markdown_main_grouper import MarkdownMainHeadingProcessor
 from extracter.qdrant_indexer import MarkdownRagQdrantIngestionService
 from extracter.summarizer import SectionSummaryPipeline, SectionSummaryConfig
-from models.file_process_stage import FileProcessStage
+from models import Chat, File, FileProcessStage, User  # noqa: F401
 from repositories.file_title_and_sumary_updater import FileSummaryRepository
 from worker import celery_app
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -32,7 +38,7 @@ class FileTaskContext:
 
 
 class ExtractionTask:
-    stage = "extracted"
+    stage = FileStage.EXTRACTED.value
 
     def run(self, ctx: FileTaskContext) -> None:
         config = ExtractionConfig(
@@ -42,16 +48,19 @@ class ExtractionTask:
         extractor = DoclingPdfExtractor(config=config)
         result = extractor.run()
 
-        print("pictures:", result.pictures_count)
-        print("tables:", result.tables_count)
-        print("texts:", result.texts_count)
+        logger.info("Extraction completed", extra={
+            "file_id": ctx.file_id,
+            "pictures": result.pictures_count,
+            "tables": result.tables_count,
+            "texts": result.texts_count,
+        })
 
 
 class MarkdownVisionTask:
-    stage = "normalizer"
+    stage = FileStage.NORMALIZER.value
 
     def run(self, ctx: FileTaskContext) -> None:
-        print(f"parsing and analyzing images... {ctx.chat_id}-{ctx.file_id}")
+        logger.info("Vision markdown processing started", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id})
 
         config = MarkdownVisionProcessingConfig(
             input_markdown_path=ctx.file_base_path / "document.md",
@@ -60,14 +69,14 @@ class MarkdownVisionTask:
         )
 
         output_path = MarkdownImageVisionProcessor(config=config).run()
-        print(f"Created RAG markdown: {output_path}")
+        logger.info("Vision markdown processing completed", extra={"file_id": ctx.file_id, "output_path": str(output_path)})
 
 
 class HeadingGroupingTask:
-    stage = "enriched"
+    stage = FileStage.ENRICHED.value
 
     def run(self, ctx: FileTaskContext) -> None:
-        print(f"Grouping by heading... {ctx.chat_id}-{ctx.file_id}")
+        logger.info("Heading grouping started", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id})
 
         processor = MarkdownMainHeadingProcessor()
         sections = processor.process_file(ctx.file_base_path / "document_rag.md")
@@ -75,16 +84,16 @@ class HeadingGroupingTask:
         with open(ctx.file_base_path / "rag.json", "w", encoding="utf-8") as file:
             json.dump(sections, file, indent=4)
 
-        print(f"Grouped by heading... {ctx.chat_id}-{ctx.file_id}")
+        logger.info("Heading grouping completed", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id})
 
 
 class SectionSummarizationTask:
-    def run(self, ctx: FileTaskContext) -> None:
-        print(f"Summarizing by heading... {ctx.chat_id}-{ctx.file_id}")
+    def run(self, ctx: FileTaskContext, loop: AbstractEventLoop) -> None:
+        logger.info("Section summarization started", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id})
         pipeline = SectionSummaryPipeline(
             config=SectionSummaryConfig(
-                ollama_url=os.getenv("OLLAMA_URL", "http://ollama:11434"),
-                model_name=os.getenv("TEXT_MODEL", "llama3.1:8b"),
+                ollama_url=settings.ollama_url,
+                model_name=settings.text_model,
                 target_words=25,
                 temperature=0.0,
             )
@@ -105,24 +114,25 @@ class SectionSummarizationTask:
             file_id=ctx.file_id,
             title=doc_title,
             summary=summary_json,
+            loop=loop,
         )
-        print(f"Summarized by heading... {ctx.chat_id}-{ctx.file_id}")
+        logger.info("Section summarization completed", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id})
 
 
 class EmbeddingTask:
-    stage = "embedding"
+    stage = FileStage.EMBEDDING.value
 
     def run(self, ctx: FileTaskContext) -> None:
-        print(f"embedding... {ctx.chat_id}-{ctx.file_id}")
+        logger.info("Embedding started", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id})
 
         config = RagIndexingConfig(
             chat_id=ctx.chat_id,
             file_id=ctx.file_id,
             source_file_path=ctx.file_base_path / "document_rag.md",
-            qdrant_url=os.getenv("QDRANT_URL", ""),
-            collection_name=os.getenv("RAG_COLLECTION_NAME", "pdf_rag"),
-            embedding_model=os.getenv("EMBEDDING_MODEL", ""),
-            ollama_url=os.getenv("OLLAMA_URL", ""),
+            qdrant_url=settings.qdrant_url,
+            collection_name=settings.rag_collection_name,
+            embedding_model=settings.embedding_model,
+            ollama_url=settings.ollama_url,
         )
 
         service = MarkdownRagQdrantIngestionService(config=config)
@@ -130,18 +140,39 @@ class EmbeddingTask:
             chunks_path=ctx.file_base_path / "rag.json",
             delete_existing_file_points=True,
         )
-        print(f"result: {result}")
-        print(f"embedded... {ctx.chat_id}-{ctx.file_id}")
+        logger.info("Embedding completed", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id, "result": result})
 
 
-def _run_staged_task(task: object, ctx: FileTaskContext) -> None:
-    stage_name = getattr(task, "stage")
-    _upsert_stage_status_sync(file_id=ctx.file_id, stage_name=stage_name, status="processing")
+class StageTask(Protocol):
+    stage: str
+
+    def run(self, ctx: FileTaskContext) -> None:
+        ...
+
+
+def _run_staged_task(task: StageTask, ctx: FileTaskContext, loop: AbstractEventLoop) -> None:
+    stage_name = task.stage
+    _upsert_stage_status_sync(
+        file_id=ctx.file_id,
+        stage_name=stage_name,
+        status=FileStageStatus.PROCESSING.value,
+        loop=loop,
+    )
     try:
         task.run(ctx)
-        _upsert_stage_status_sync(file_id=ctx.file_id, stage_name=stage_name, status="done")
+        _upsert_stage_status_sync(
+            file_id=ctx.file_id,
+            stage_name=stage_name,
+            status=FileStageStatus.DONE.value,
+            loop=loop,
+        )
     except Exception:
-        _upsert_stage_status_sync(file_id=ctx.file_id, stage_name=stage_name, status="failed")
+        _upsert_stage_status_sync(
+            file_id=ctx.file_id,
+            stage_name=stage_name,
+            status=FileStageStatus.FAILED.value,
+            loop=loop,
+        )
         raise
 
 
@@ -166,29 +197,36 @@ def process_uploaded_file(
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    print(
-        f"[file_extract] starting extraction: "
-        f"chat_id={chat_id}, user_id={user_id}, filename={filename}"
+    logger.info(
+        "File extraction pipeline started",
+        extra={"chat_id": chat_id, "user_id": user_id, "source_file_name": filename, "file_id": file_id},
     )
-    print(f"Processing file: {filename}")
-    print(f"file_id={file_id}, chat_id={chat_id}, user_id={user_id}")
 
-    _run_staged_task(ExtractionTask(), ctx)
-    _run_staged_task(MarkdownVisionTask(), ctx)
-    _run_staged_task(HeadingGroupingTask(), ctx)
-
+    loop = asyncio.new_event_loop()
     try:
-        SectionSummarizationTask().run(ctx)
-    except Exception:
-        print(f"Failed to summarize by heading... {ctx.chat_id}-{ctx.file_id}")
-        raise
+        _run_staged_task(ExtractionTask(), ctx, loop)
+        _run_staged_task(MarkdownVisionTask(), ctx, loop)
+        _run_staged_task(HeadingGroupingTask(), ctx, loop)
 
-    _run_staged_task(EmbeddingTask(), ctx)
-    _upsert_stage_status_sync(file_id=ctx.file_id, stage_name="done", status="done")
+        try:
+            SectionSummarizationTask().run(ctx, loop)
+        except Exception:
+            logger.exception("Section summarization failed", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id})
+            raise
+
+        _run_staged_task(EmbeddingTask(), ctx, loop)
+        _upsert_stage_status_sync(
+            file_id=ctx.file_id,
+            stage_name=FileStage.DONE.value,
+            status=FileStageStatus.DONE.value,
+            loop=loop,
+        )
+    finally:
+        loop.close()
 
 
-def _upsert_stage_status_sync(file_id: str, stage_name: str, status: str) -> None:
-    asyncio.run(_upsert_stage_status(file_id=file_id, stage_name=stage_name, status=status))
+def _upsert_stage_status_sync(file_id: str, stage_name: str, status: str, loop: AbstractEventLoop) -> None:
+    loop.run_until_complete(_upsert_stage_status(file_id=file_id, stage_name=stage_name, status=status))
 
 
 async def _upsert_stage_status(file_id: str, stage_name: str, status: str) -> None:

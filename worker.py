@@ -1,8 +1,8 @@
-import os
-
 from celery import Celery
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+from core.settings import settings
+
+REDIS_URL = settings.redis_url
 
 celery_app = Celery(
     "agent-doc-extracter",

@@ -1,5 +1,4 @@
 import json
-import os
 from typing import Any
 
 from celery.result import AsyncResult
@@ -7,15 +6,13 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from redis import Redis
 
+from core.settings import settings
 from worker import celery_app
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
-
-
 def get_redis_client() -> Redis:
-    return Redis.from_url(REDIS_URL, decode_responses=True)
+    return Redis.from_url(settings.redis_url, decode_responses=True)
 
 
 class RetryTaskRequest(BaseModel):

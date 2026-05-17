@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +12,7 @@ from llama_index.core import Document
 
 from fastembed import LateInteractionTextEmbedding
 from llama_index.core.node_parser import SentenceSplitter, SemanticDoubleMergingSplitterNodeParser
+from core.settings import settings
 
 
 class RagChunkingComponents:
@@ -44,6 +44,7 @@ class RagChunkingComponents:
         )
         self.max_safe_chars = max_chunk_size
 
+
 # ============================================================
 # Config
 # ============================================================
@@ -57,11 +58,11 @@ class RagIndexingConfig:
     chat_id: str | None = None
     file_id: str | None = None
 
-    qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
-    collection_name: str = os.getenv("QDRANT_COLLECTION", "pdf_rag")
+    qdrant_url: str = settings.qdrant_url
+    collection_name: str = settings.rag_collection_name
 
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
-    ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
+    embedding_model: str = settings.embedding_model
+    ollama_url: str = settings.ollama_url
 
 
 @dataclass(frozen=True)
@@ -376,6 +377,26 @@ class QdrantHybridIndexSaver:
             base_url=self._config.ollama_url,
         )
 
+    def _upsert_points_in_batches(
+            self,
+            points: list[models.PointStruct],
+            batch_size: int = 8,
+    ) -> None:
+        for start in range(0, len(points), batch_size):
+            batch = points[start:start + batch_size]
+
+            print(
+                f"Upserting Qdrant batch: "
+                f"{start // batch_size + 1}, "
+                f"points={len(batch)}"
+            )
+
+            self._client.upsert(
+                collection_name=self._config.collection_name,
+                points=batch,
+                wait=True,
+            )
+
     def save(self, chunks: list[dict[str, Any]]) -> dict[str, Any]:
         valid_chunks = self._filter_valid_chunks(chunks)
 
@@ -395,13 +416,26 @@ class QdrantHybridIndexSaver:
 
         points: list[models.PointStruct] = []
 
+        pre_splitter = SentenceSplitter(chunk_size=1000, chunk_overlap=100)
+
         for chunk_index, chunk in enumerate(valid_chunks):
             text = (chunk.get("text") or "").strip()
 
-            nodes = self._chunking_components.splitter.get_nodes_from_documents([Document(text=text)])
+            initial_blocks = pre_splitter.get_nodes_from_documents([Document(text=text)])
+
+            intermediate_documents = [
+                Document(text=node.get_content()) for node in initial_blocks
+            ]
+            print(f"text: {len(text)}")
+
+            nodes = self._chunking_components.splitter.get_nodes_from_documents(intermediate_documents)
+
+            print(f"nodes: {len(nodes)}")
 
             for splitter_index, node in enumerate(nodes):
                 chunk_text = node.get_content()
+
+                print(f"chunk_text: {len(chunk_text)}")
 
                 point_id = self._point_id_builder.build(
                     doc_id=self._config.doc_id or "unknown_doc",
@@ -437,11 +471,7 @@ class QdrantHybridIndexSaver:
 
                 points.append(point)
 
-        self._client.upsert(
-            collection_name=self._config.collection_name,
-            points=points,
-            wait=True,
-        )
+        self._upsert_points_in_batches(points=points, batch_size=5)
 
         return {
             "collection_name": self._config.collection_name,

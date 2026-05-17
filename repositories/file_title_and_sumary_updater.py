@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+from asyncio import AbstractEventLoop
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 
+from core.logging import get_logger
 from database import SessionLocal
 from models.file import File
+
+logger = get_logger(__name__)
 
 
 class FileSummaryRepository:
@@ -42,15 +46,15 @@ class FileSummaryRepository:
             file_id: str | UUID,
             title: str,
             summary: Any,
+            loop: AbstractEventLoop | None = None,
     ) -> File:
-        """
-        Use this from normal sync Celery tasks.
-        """
-        print("update_file_summary_sync")
-        return asyncio.run(
-            self.update_file_summary(
-                file_id=file_id,
-                title=title,
-                summary=summary,
-            )
+        """Use this from normal sync Celery tasks."""
+        logger.info("Updating file summary", extra={"file_id": str(file_id)})
+        coroutine = self.update_file_summary(
+            file_id=file_id,
+            title=title,
+            summary=summary,
         )
+        if loop is not None:
+            return loop.run_until_complete(coroutine)
+        return asyncio.run(coroutine)

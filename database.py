@@ -1,10 +1,10 @@
-import os
 from collections.abc import AsyncGenerator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
+from core.settings import settings
 
 class Base(DeclarativeBase):
     pass
@@ -19,9 +19,7 @@ def _normalize_database_url(raw_url: str) -> str:
     return url
 
 
-raw_database_url = os.getenv("DATABASE_URL")
-if not raw_database_url:
-    raise RuntimeError("DATABASE_URL is required")
+raw_database_url = settings.database_url
 
 DATABASE_URL = _normalize_database_url(raw_database_url)
 
