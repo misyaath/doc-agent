@@ -24,3 +24,5 @@ langchain-ollama
 langchain-core
 langgraph
 fastembed
+semantic-router
+llama-index-embeddings-huggingface

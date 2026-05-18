@@ -14,34 +14,35 @@ from fastembed import LateInteractionTextEmbedding
 from llama_index.core.node_parser import SentenceSplitter, SemanticDoubleMergingSplitterNodeParser
 from core.settings import settings
 
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
 
 class RagChunkingComponents:
     def __init__(
             self,
-            model_name: str = "nomic-embed-text",
-            base_url: str = "http://localhost:11434",
             initial_threshold: float = 0.15,
             merging_threshold: float = 0.15,
             appending_threshold: float = 0.20,
             max_chunk_size: int = 4000,
             fallback_chunk_size: int = 512,
-            fallback_chunk_overlap: int = 50,
+            fallback_chunk_overlap: int = 128,
     ) -> None:
-        self.embed_model = OllamaEmbedding(
-            model_name=model_name,
-            base_url=base_url,
+        self.fallback_splitter = SentenceSplitter(
+            chunk_size=fallback_chunk_size,
+            chunk_overlap=fallback_chunk_overlap,
+        )
+
+        chunking_embed_model = HuggingFaceEmbedding(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
         )
         self.splitter = SemanticDoubleMergingSplitterNodeParser(
             initial_threshold=initial_threshold,
             merging_threshold=merging_threshold,
             appending_threshold=appending_threshold,
             max_chunk_size=max_chunk_size,
-            embed_model=self.embed_model,
+            embed_model=chunking_embed_model,
         )
-        self.fallback_splitter = SentenceSplitter(
-            chunk_size=fallback_chunk_size,
-            chunk_overlap=fallback_chunk_overlap,
-        )
+
         self.max_safe_chars = max_chunk_size
 
 
@@ -226,6 +227,8 @@ class EmbeddingModelFactory:
             model_name=self._config.embedding_model,
             base_url=self._config.ollama_url,
             embed_batch_size=1,
+            ollama_additional_kwargs=
+            {"num_ctx": 8192}
         )
 
 
@@ -372,10 +375,7 @@ class QdrantHybridIndexSaver:
         self._colbert_model_factory = colbert_model_factory or ColbertModelFactory(
             self.COLBERT_MODEL_NAME
         )
-        self._chunking_components = chunking_components or RagChunkingComponents(
-            model_name=self._config.embedding_model,
-            base_url=self._config.ollama_url,
-        )
+        self._chunking_components = chunking_components or RagChunkingComponents()
 
     def _upsert_points_in_batches(
             self,
@@ -416,21 +416,10 @@ class QdrantHybridIndexSaver:
 
         points: list[models.PointStruct] = []
 
-        pre_splitter = SentenceSplitter(chunk_size=1000, chunk_overlap=100)
-
         for chunk_index, chunk in enumerate(valid_chunks):
             text = (chunk.get("text") or "").strip()
 
-            initial_blocks = pre_splitter.get_nodes_from_documents([Document(text=text)])
-
-            intermediate_documents = [
-                Document(text=node.get_content()) for node in initial_blocks
-            ]
-            print(f"text: {len(text)}")
-
-            nodes = self._chunking_components.splitter.get_nodes_from_documents(intermediate_documents)
-
-            print(f"nodes: {len(nodes)}")
+            nodes = self._chunking_components.splitter.get_nodes_from_documents([Document(text=text)])
 
             for splitter_index, node in enumerate(nodes):
                 chunk_text = node.get_content()
