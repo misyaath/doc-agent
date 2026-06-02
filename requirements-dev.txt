@@ -3,3 +3,4 @@
 ruff
 mypy
 types-requests
+pytest
