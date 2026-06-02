@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     ollama_url: str = Field(validation_alias="OLLAMA_URL")
     text_model: str = Field(validation_alias="TEXT_MODEL")
 
+    langsmith_tracing: bool = Field(validation_alias="LANGSMITH_TRACING")
+    langsmith_endpoint: str = Field(validation_alias="LANGSMITH_ENDPOINT")
+    langsmith_api_key: str | None = Field(validation_alias="LANGSMITH_API_KEY")
+    langsmith_project: str = Field(validation_alias="LANGSMITH_PROJECT")
+    langgraph_checkpoint_db_url: str = Field(validation_alias="LANGGRAPH_CHECKPOINT_DB_URL")
+
     @field_validator(
         "database_url",
         "jwt_secret",
@@ -34,6 +40,7 @@ class Settings(BaseSettings):
         "embedding_model",
         "ollama_url",
         "text_model",
+        "langgraph_checkpoint_db_url",
         mode="before",
     )
     @classmethod

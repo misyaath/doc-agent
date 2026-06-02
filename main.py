@@ -1,3 +1,4 @@
+from agent.langgraph_memory import setup_langgraph_checkpointer
 from controller.agent_controller import router as agent_router
 from controller.chat_controller import router as chat_router
 from controller.file_controller import router as file_router
@@ -5,6 +6,14 @@ from controller.task_controller import router as task_router
 from fastapi import FastAPI
 
 from controller.user_controller import router as user_router
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    setup_langgraph_checkpointer()
+    yield
+
 
 app = FastAPI(
     title="AI Agent API",
@@ -18,6 +27,7 @@ app = FastAPI(
         {"name": "tasks", "description": "Celery task monitoring and retries"},
         {"name": "system", "description": "Service health and system endpoints"},
     ],
+    lifespan=lifespan,
 )
 app.include_router(user_router)
 app.include_router(chat_router)
