@@ -1,14 +1,17 @@
-.PHONY: quality lint typecheck format
+.PHONY: quality lint typecheck test format
 
 PYTHON ?= .venv/bin/python
 
-quality: lint typecheck
+quality: lint typecheck test
 
 lint:
 	$(PYTHON) -m ruff check .
 
 typecheck:
 	$(PYTHON) -m mypy .
+
+test:
+	$(PYTHON) -m pytest
 
 format:
 	$(PYTHON) -m ruff format .
