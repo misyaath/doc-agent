@@ -2,6 +2,22 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ChatCreateResponse(BaseModel):
+    """
+    Chat Create Response.
+
+    Purpose:
+        Defines ChatCreateResponse in the Pydantic schema layer that validates API
+            request and response payloads.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        model_config (Any): Class-level value used by this class.
+        user_id (int): Declared data field for this class.
+        chat_id (str): Declared data field for this class.
+    """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {

@@ -18,23 +18,91 @@ logger = get_logger(__name__)
 
 
 def _is_pdf_file(upload: UploadFile) -> bool:
+    """
+    Is pdf file.
+
+    Purpose:
+        Implements _is_pdf_file for the business-service layer that coordinates
+            repositories, security helpers, RAG execution, and API workflows.
+    Args:
+        upload (UploadFile): Input value for the upload parameter.
+    Returns:
+        bool: True when the condition is satisfied; otherwise False.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     name = (upload.filename or "").lower()
     content_type = (upload.content_type or "").lower()
     return name.endswith(".pdf") and content_type in {"application/pdf", "application/x-pdf"}
 
 
 class FileService:
+    """
+    File Service.
+
+    Purpose:
+        Defines FileService in the business-service layer that coordinates repositories,
+            security helpers, RAG execution, and API workflows.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
     def __init__(self, chat_repository: ChatRepository, file_repository: FileRepository) -> None:
+        """
+        Initialize the object with its required dependencies.
+
+        Purpose:
+            Implements __init__ for the business-service layer that coordinates
+                repositories, security helpers, RAG execution, and API workflows.
+        Class:
+            Belongs to FileService; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chat_repository (ChatRepository): Input value for the chat repository
+                parameter.
+            file_repository (FileRepository): Input value for the file repository
+                parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside FileService so related code remains
+                cohesive and testable.
+        """
         self._chat_repository = chat_repository
         self._file_repository = file_repository
 
     async def upload_pdf_files(
-            self,
-            *,
-            chat_id: str,
-            files: list[UploadFile],
-            user_id: int,
+        self,
+        *,
+        chat_id: str,
+        files: list[UploadFile],
+        user_id: int,
     ) -> FileUploadResponse:
+        """
+        Upload pdf files.
+
+        Purpose:
+            Implements upload_pdf_files for the business-service layer that coordinates
+                repositories, security helpers, RAG execution, and API workflows.
+        Class:
+            Belongs to FileService; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chat_id (str): Chat/session identifier used to scope retrieval, tasks, or
+                responses.
+            files (list[UploadFile]): Input value for the files parameter.
+            user_id (int): Authenticated user identifier used to scope the operation.
+        Returns:
+            FileUploadResponse: API response model returned to the client.
+        Why Added:
+            Centralizes this behavior inside FileService so related code remains
+                cohesive and testable.
+        """
         chat = await self._chat_repository.get_by_id_and_user_id(chat_id=chat_id, user_id=user_id)
         if not chat:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
@@ -113,6 +181,21 @@ class FileService:
 
 
 def get_file_service(db: AsyncSession = Depends(get_db)) -> FileService:
+    """
+    Get file service.
+
+    Purpose:
+        Implements get_file_service for the business-service layer that coordinates
+            repositories, security helpers, RAG execution, and API workflows.
+    Args:
+        db (AsyncSession): Database session used to read or persist application records.
+    Returns:
+        FileService: Domain or persistence object produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     return FileService(
         chat_repository=ChatRepository(db),
         file_repository=FileRepository(db),

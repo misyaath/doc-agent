@@ -11,6 +11,26 @@ ALLOWED_STATUS = {"waiting", "started", "processing", "done", "failed"}
 
 
 class FileProcessStage(Base):
+    """
+    File Process Stage.
+
+    Purpose:
+        Defines FileProcessStage in the SQLAlchemy model layer that maps application
+            entities to database tables.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        id (Mapped[str]): Declared data field for this class.
+        file_id (Mapped[str]): Declared data field for this class.
+        stage (Mapped[str]): Declared data field for this class.
+        status (Mapped[str]): Declared data field for this class.
+        created_at (Mapped[datetime]): Declared data field for this class.
+        updated_at (Mapped[datetime]): Declared data field for this class.
+        file (Any): Class-level value used by this class.
+    """
+
     __tablename__ = "file_process_stages"
     __table_args__ = (
         CheckConstraint(

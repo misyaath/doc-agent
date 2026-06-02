@@ -7,6 +7,23 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class MarkdownMainSection:
+    """
+    Markdown Main Section.
+
+    Purpose:
+        Defines MarkdownMainSection in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        heading (str): Declared data field for this class.
+        heading_level (int): Declared data field for this class.
+        text (str): Declared data field for this class.
+        order (int): Declared data field for this class.
+    """
+
     heading: str
     heading_level: int
     text: str
@@ -15,16 +32,20 @@ class MarkdownMainSection:
 
 class MarkdownMainHeadingGrouper:
     """
-    Groups markdown by main paper headings.
+    Markdown Main Heading Grouper.
 
-    Main headings:
-        ## 1 Introduction
-        ## 2 Method
-        ## 3 Experiments
+    Purpose:
+        Defines MarkdownMainHeadingGrouper in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
 
-    Subheadings stay inside the current main heading:
-        ## 2.1 Preliminary
-        ## 2.2 Document Understanding Transformer
+    Attributes:
+        HEADING_RE (Any): Class-level value used by this class.
+        MAIN_NUMBERED_HEADING_RE (Any): Class-level value used by this class.
+        SUB_NUMBERED_HEADING_RE (Any): Class-level value used by this class.
     """
 
     HEADING_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<title>.+?)\s*$")
@@ -32,6 +53,24 @@ class MarkdownMainHeadingGrouper:
     SUB_NUMBERED_HEADING_RE = re.compile(r"^\d+\.\d+.*")
 
     def group(self, markdown_text: str) -> list[MarkdownMainSection]:
+        """
+        Group.
+
+        Purpose:
+            Implements group for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to MarkdownMainHeadingGrouper; uses that class state and
+                dependencies when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            markdown_text (str): Input value for the markdown text parameter.
+        Returns:
+            list[MarkdownMainSection]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside MarkdownMainHeadingGrouper so related code
+                remains cohesive and testable.
+        """
         sections: list[MarkdownMainSection] = []
 
         current_heading = "Document Start"
@@ -91,27 +130,93 @@ class MarkdownMainHeadingGrouper:
         return sections
 
     def _is_main_heading(self, title: str) -> bool:
+        """
+        Is main heading.
+
+        Purpose:
+            Implements _is_main_heading for the document extraction pipeline that
+                normalizes PDFs, enriches visual content, builds RAG units, and indexes
+                data.
+        Class:
+            Belongs to MarkdownMainHeadingGrouper; uses that class state and
+                dependencies when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            title (str): Input value for the title parameter.
+        Returns:
+            bool: True when the condition is satisfied; otherwise False.
+        Why Added:
+            Centralizes this behavior inside MarkdownMainHeadingGrouper so related code
+                remains cohesive and testable.
+        """
         title = title.strip()
 
         # 1 Introduction, 2 Method, 3 Experiments
         if self.MAIN_NUMBERED_HEADING_RE.match(title):
             # Exclude 2.1, 3.4, A.1 etc.
-            if self.SUB_NUMBERED_HEADING_RE.match(title):
-                return False
-            return True
+            return not self.SUB_NUMBERED_HEADING_RE.match(title)
 
         # Allow document title as first section if needed.
         return False
 
 
 class MarkdownMainHeadingProcessor:
+    """
+    Markdown Main Heading Processor.
+
+    Purpose:
+        Defines MarkdownMainHeadingProcessor in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
     def __init__(
-            self,
-            grouper: MarkdownMainHeadingGrouper | None = None,
+        self,
+        grouper: MarkdownMainHeadingGrouper | None = None,
     ) -> None:
+        """
+        Initialize the object with its required dependencies.
+
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to MarkdownMainHeadingProcessor; uses that class state and
+                dependencies when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            grouper (MarkdownMainHeadingGrouper | None): Input value for the grouper
+                parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside MarkdownMainHeadingProcessor so related
+                code remains cohesive and testable.
+        """
         self._grouper = grouper or MarkdownMainHeadingGrouper()
 
     def process_file(self, markdown_path: str | Path) -> list[dict]:
+        """
+        Process file.
+
+        Purpose:
+            Implements process_file for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to MarkdownMainHeadingProcessor; uses that class state and
+                dependencies when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            markdown_path (str | Path): Input value for the markdown path parameter.
+        Returns:
+            list[dict]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside MarkdownMainHeadingProcessor so related
+                code remains cohesive and testable.
+        """
         markdown_path = Path(markdown_path)
 
         if not markdown_path.exists():

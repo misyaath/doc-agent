@@ -7,6 +7,34 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """
+    Settings.
+
+    Purpose:
+        Defines Settings in the shared infrastructure layer that exposes application
+            configuration and logging utilities.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        model_config (Any): Class-level value used by this class.
+        database_url (str): Declared data field for this class.
+        jwt_secret (str): Declared data field for this class.
+        jwt_expires_seconds (int): Declared data field for this class.
+        redis_url (str): Declared data field for this class.
+        qdrant_url (str): Declared data field for this class.
+        rag_collection_name (str): Declared data field for this class.
+        embedding_model (str): Declared data field for this class.
+        ollama_url (str): Declared data field for this class.
+        text_model (str): Declared data field for this class.
+        langsmith_tracing (bool): Declared data field for this class.
+        langsmith_endpoint (str): Declared data field for this class.
+        langsmith_api_key (str | None): Declared data field for this class.
+        langsmith_project (str): Declared data field for this class.
+        langgraph_checkpoint_db_url (str): Declared data field for this class.
+    """
+
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parents[1] / ".env"),
         env_file_encoding="utf-8",
@@ -44,10 +72,27 @@ class Settings(BaseSettings):
         mode="before",
     )
     @classmethod
-    def validate_not_empty(cls, value: str) -> str:
+    def validate_not_empty(cls: type, value: str) -> str:
+        """
+        Validate not empty.
+
+        Purpose:
+            Implements validate_not_empty for the shared infrastructure layer that
+                exposes application configuration and logging utilities.
+        Class:
+            Belongs to Settings; uses that class state and dependencies when available.
+        Args:
+            cls (type): Class object used by validators or class-level helpers.
+            value (str): Raw value being validated, normalized, or transformed.
+        Returns:
+            str: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside Settings so related code remains cohesive
+                and testable.
+        """
         if value is None or not str(value).strip():
             raise ValueError("Environment variable value cannot be empty")
         return str(value).strip()
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

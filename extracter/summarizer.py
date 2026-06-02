@@ -8,13 +8,30 @@ from typing import Any
 
 import requests
 
-
 # ============================================================
 # Config
 # ============================================================
 
+
 @dataclass(frozen=True)
 class SectionSummaryConfig:
+    """
+    Section Summary Config.
+
+    Purpose:
+        Defines SectionSummaryConfig in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        ollama_url (str): Declared data field for this class.
+        model_name (str): Declared data field for this class.
+        target_words (int): Declared data field for this class.
+        temperature (float): Declared data field for this class.
+    """
+
     ollama_url: str = "http://localhost:11434"
     model_name: str = "llama3.1:8b"
     target_words: int = 25
@@ -25,8 +42,39 @@ class SectionSummaryConfig:
 # Loader
 # ============================================================
 
+
 class RagChunkLoader:
+    """
+    Rag Chunk Loader.
+
+    Purpose:
+        Defines RagChunkLoader in the document extraction pipeline that normalizes PDFs,
+            enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
     def load(self, path: str | Path) -> list[dict[str, Any]]:
+        """
+        Load.
+
+        Purpose:
+            Implements load for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to RagChunkLoader; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            path (str | Path): Filesystem path used as input or output for the
+                operation.
+        Returns:
+            list[dict[str, Any]]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside RagChunkLoader so related code remains
+                cohesive and testable.
+        """
         file_path = Path(path)
 
         if not file_path.exists():
@@ -44,37 +92,70 @@ class RagChunkLoader:
 # Markdown Section Parser
 # ============================================================
 
+
 @dataclass(frozen=True)
 class ParsedSubSection:
+    """
+    Parsed Sub Section.
+
+    Purpose:
+        Defines ParsedSubSection in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        heading (str): Declared data field for this class.
+        text (str): Declared data field for this class.
+    """
+
     heading: str
     text: str
 
 
 class MarkdownSubSectionParser:
     """
-    Splits one main chunk text into subheading sections.
+    Markdown Sub Section Parser.
 
-    Example:
-        ## 2 Method
-        ## 2.1 Preliminary
-        text...
-        ## 2.2 Document Understanding Transformer
-        text...
+    Purpose:
+        Defines MarkdownSubSectionParser in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
 
-    Output:
-        [
-          ParsedSubSection("2.1 Preliminary", "..."),
-          ParsedSubSection("2.2 Document Understanding Transformer", "...")
-        ]
+    Attributes:
+        HEADING_RE (Any): Class-level value used by this class.
     """
 
     HEADING_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<title>.+?)\s*$")
 
     def parse(
-            self,
-            main_heading: str,
-            markdown_text: str,
+        self,
+        main_heading: str,
+        markdown_text: str,
     ) -> list[ParsedSubSection]:
+        """
+        Parse.
+
+        Purpose:
+            Implements parse for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to MarkdownSubSectionParser; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            main_heading (str): Input value for the main heading parameter.
+            markdown_text (str): Input value for the markdown text parameter.
+        Returns:
+            list[ParsedSubSection]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside MarkdownSubSectionParser so related code
+                remains cohesive and testable.
+        """
         lines = markdown_text.splitlines()
 
         sections: list[ParsedSubSection] = []
@@ -138,11 +219,60 @@ class MarkdownSubSectionParser:
 # Ollama Client
 # ============================================================
 
+
 class OllamaChatClient:
+    """
+    Ollama Chat Client.
+
+    Purpose:
+        Defines OllamaChatClient in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
     def __init__(self, config: SectionSummaryConfig) -> None:
+        """
+        Initialize the object with its required dependencies.
+
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to OllamaChatClient; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            config (SectionSummaryConfig): Configuration object controlling this
+                component.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside OllamaChatClient so related code remains
+                cohesive and testable.
+        """
         self._config = config
 
     def generate(self, prompt: str) -> str:
+        """
+        Generate.
+
+        Purpose:
+            Implements generate for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to OllamaChatClient; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            prompt (str): Prompt text sent to the agent or language model.
+        Returns:
+            str: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside OllamaChatClient so related code remains
+                cohesive and testable.
+        """
         url = f"{self._config.ollama_url.rstrip('/')}/api/chat"
 
         payload = {
@@ -179,21 +309,74 @@ class OllamaChatClient:
 # Summarizer
 # ============================================================
 
+
 class SectionSummarizer:
+    """
+    Section Summarizer.
+
+    Purpose:
+        Defines SectionSummarizer in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
     def __init__(
-            self,
-            ollama_client: OllamaChatClient,
-            config: SectionSummaryConfig,
+        self,
+        ollama_client: OllamaChatClient,
+        config: SectionSummaryConfig,
     ) -> None:
+        """
+        Initialize the object with its required dependencies.
+
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to SectionSummarizer; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            ollama_client (OllamaChatClient): Input value for the ollama client
+                parameter.
+            config (SectionSummaryConfig): Configuration object controlling this
+                component.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside SectionSummarizer so related code remains
+                cohesive and testable.
+        """
         self._ollama_client = ollama_client
         self._config = config
 
     def summarize(
-            self,
-            main_heading: str,
-            sub_heading: str,
-            section_text: str,
+        self,
+        main_heading: str,
+        sub_heading: str,
+        section_text: str,
     ) -> str:
+        """
+        Summarize.
+
+        Purpose:
+            Implements summarize for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to SectionSummarizer; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            main_heading (str): Input value for the main heading parameter.
+            sub_heading (str): Input value for the sub heading parameter.
+            section_text (str): Input value for the section text parameter.
+        Returns:
+            str: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside SectionSummarizer so related code remains
+                cohesive and testable.
+        """
         prompt = f"""
 Summarize the following PDF/document section for a RAG system.
 
@@ -226,34 +409,66 @@ Requirements:
 # Nested Summary Builder
 # ============================================================
 
+
 class NestedSectionSummaryBuilder:
     """
-    Converts final chunks into nested summary JSON:
+    Nested Section Summary Builder.
 
-    [
-      {
-        "1 Introduction": {
-          "1 Introduction": "summary..."
-        }
-      },
-      {
-        "2 Method": {
-          "2.1 Preliminary: background": "summary...",
-          "2.2 Document Understanding Transformer": "summary..."
-        }
-      }
-    ]
+    Purpose:
+        Defines NestedSectionSummaryBuilder in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
     """
 
     def __init__(
-            self,
-            parser: MarkdownSubSectionParser,
-            summarizer: SectionSummarizer,
+        self,
+        parser: MarkdownSubSectionParser,
+        summarizer: SectionSummarizer,
     ) -> None:
+        """
+        Initialize the object with its required dependencies.
+
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to NestedSectionSummaryBuilder; uses that class state and
+                dependencies when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            parser (MarkdownSubSectionParser): Input value for the parser parameter.
+            summarizer (SectionSummarizer): Input value for the summarizer parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside NestedSectionSummaryBuilder so related code
+                remains cohesive and testable.
+        """
         self._parser = parser
         self._summarizer = summarizer
 
     def build(self, chunks: list[dict[str, Any]]) -> list[dict[str, dict[str, str]]]:
+        """
+        Build.
+
+        Purpose:
+            Implements build for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to NestedSectionSummaryBuilder; uses that class state and
+                dependencies when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chunks (list[dict[str, Any]]): Input value for the chunks parameter.
+        Returns:
+            list[dict[str, dict[str, str]]]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside NestedSectionSummaryBuilder so related code
+                remains cohesive and testable.
+        """
         result: list[dict[str, dict[str, str]]] = []
 
         sorted_chunks = sorted(
@@ -262,9 +477,7 @@ class NestedSectionSummaryBuilder:
         )
 
         for chunk in sorted_chunks:
-            main_heading = self._clean_heading(
-                chunk.get("heading") or "Untitled Section"
-            )
+            main_heading = self._clean_heading(chunk.get("heading") or "Untitled Section")
 
             text = (chunk.get("text") or "").strip()
 
@@ -300,6 +513,25 @@ class NestedSectionSummaryBuilder:
         return result
 
     def _clean_heading(self, value: Any) -> str:
+        """
+        Clean heading.
+
+        Purpose:
+            Implements _clean_heading for the document extraction pipeline that
+                normalizes PDFs, enriches visual content, builds RAG units, and indexes
+                data.
+        Class:
+            Belongs to NestedSectionSummaryBuilder; uses that class state and
+                dependencies when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            value (Any): Raw value being validated, normalized, or transformed.
+        Returns:
+            str: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside NestedSectionSummaryBuilder so related code
+                remains cohesive and testable.
+        """
         text = str(value or "").strip()
         text = re.sub(r"\s+", " ", text)
         return text or "Untitled Section"
@@ -309,13 +541,48 @@ class NestedSectionSummaryBuilder:
 # Pipeline
 # ============================================================
 
+
 class SectionSummaryPipeline:
+    """
+    Section Summary Pipeline.
+
+    Purpose:
+        Defines SectionSummaryPipeline in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
     def __init__(
-            self,
-            config: SectionSummaryConfig,
-            loader: RagChunkLoader | None = None,
-            parser: MarkdownSubSectionParser | None = None,
+        self,
+        config: SectionSummaryConfig,
+        loader: RagChunkLoader | None = None,
+        parser: MarkdownSubSectionParser | None = None,
     ) -> None:
+        """
+        Initialize the object with its required dependencies.
+
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to SectionSummaryPipeline; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            config (SectionSummaryConfig): Configuration object controlling this
+                component.
+            loader (RagChunkLoader | None): Input value for the loader parameter.
+            parser (MarkdownSubSectionParser | None): Input value for the parser
+                parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside SectionSummaryPipeline so related code
+                remains cohesive and testable.
+        """
         self._config = config
         self._loader = loader or RagChunkLoader()
         self._parser = parser or MarkdownSubSectionParser()
@@ -332,10 +599,30 @@ class SectionSummaryPipeline:
         )
 
     def run_from_file(
-            self,
-            chunks_path: str | Path,
-            output_path: str | Path | None = None,
+        self,
+        chunks_path: str | Path,
+        output_path: str | Path | None = None,
     ) -> list[dict[str, dict[str, str]]]:
+        """
+        Run from file.
+
+        Purpose:
+            Implements run_from_file for the document extraction pipeline that
+                normalizes PDFs, enriches visual content, builds RAG units, and indexes
+                data.
+        Class:
+            Belongs to SectionSummaryPipeline; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chunks_path (str | Path): Input value for the chunks path parameter.
+            output_path (str | Path | None): Input value for the output path parameter.
+        Returns:
+            list[dict[str, dict[str, str]]]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside SectionSummaryPipeline so related code
+                remains cohesive and testable.
+        """
         chunks = self._loader.load(chunks_path)
 
         nested_summary = self._builder.build(chunks)

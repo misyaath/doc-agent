@@ -4,6 +4,21 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class AgentChatRequest(BaseModel):
+    """
+    Agent Chat Request.
+
+    Purpose:
+        Defines AgentChatRequest in the Pydantic schema layer that validates API request
+            and response payloads.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        chat_id (str): Declared data field for this class.
+        prompt (str): Declared data field for this class.
+    """
+
     chat_id: str = Field(description="Chat UUID")
     prompt: str = Field(
         min_length=1,
@@ -13,6 +28,26 @@ class AgentChatRequest(BaseModel):
 
 
 class AgentChatResponse(BaseModel):
+    """
+    Agent Chat Response.
+
+    Purpose:
+        Defines AgentChatResponse in the Pydantic schema layer that validates API
+            request and response payloads.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        model_config (Any): Class-level value used by this class.
+        chat_id (str): Declared data field for this class.
+        prompt (str): Declared data field for this class.
+        answer (str): Declared data field for this class.
+        parsed_query (dict[str, Any] | None): Declared data field for this class.
+        retrieved_chunks (list[dict[str, Any]]): Declared data field for this class.
+        context (str | None): Declared data field for this class.
+    """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {

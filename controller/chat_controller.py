@@ -18,4 +18,21 @@ async def create_chat(
     service: ChatService = Depends(get_chat_service),
     user_id: int = Depends(get_current_user_id),
 ) -> ChatCreateResponse:
+    """
+    Create chat.
+
+    Purpose:
+        Implements create_chat for the HTTP controller layer that validates incoming
+            requests, delegates to services, and shapes API responses.
+    Args:
+        service (ChatService): Injected service dependency that performs the business
+            operation.
+        user_id (int): Authenticated user identifier used to scope the operation.
+    Returns:
+        ChatCreateResponse: API response model returned to the client.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     return await service.create_chat(user_id=user_id)

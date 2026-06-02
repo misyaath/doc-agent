@@ -20,11 +20,42 @@ EXTRACTED_ROOT = Path("/app/extracted_files")
 # File discovery
 # -----------------------------
 
+
 def find_pdfs() -> list[Path]:
+    """
+    Find pdfs.
+
+    Purpose:
+        Implements find_pdfs for the developer tooling layer used to inspect extracted
+            documents and RAG artifacts.
+    Args:
+        None.
+    Returns:
+        list[Path]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     return sorted(UPLOADS_ROOT.rglob("*.pdf"))
 
 
 def find_jsons(patterns: list[str]) -> list[Path]:
+    """
+    Find jsons.
+
+    Purpose:
+        Implements find_jsons for the developer tooling layer used to inspect extracted
+            documents and RAG artifacts.
+    Args:
+        patterns (list[str]): Input value for the patterns parameter.
+    Returns:
+        list[Path]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     files: list[Path] = []
     for pattern in patterns:
         files.extend(EXTRACTED_ROOT.rglob(pattern))
@@ -32,36 +63,114 @@ def find_jsons(patterns: list[str]) -> list[Path]:
 
 
 def find_document_jsons() -> list[Path]:
-    return find_jsons([
-        "document.json",
-        "docling_document.json",
-        "*document*.json",
-    ])
+    """
+    Find document jsons.
+
+    Purpose:
+        Implements find_document_jsons for the developer tooling layer used to inspect
+            extracted documents and RAG artifacts.
+    Args:
+        None.
+    Returns:
+        list[Path]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
+    return find_jsons(
+        [
+            "document.json",
+            "docling_document.json",
+            "*document*.json",
+        ]
+    )
 
 
 def find_normalized_jsons() -> list[Path]:
-    return find_jsons([
-        "normalized.json",
-        "normalized_units.json",
-        "*normalized*.json",
-    ])
+    """
+    Find normalized jsons.
+
+    Purpose:
+        Implements find_normalized_jsons for the developer tooling layer used to inspect
+            extracted documents and RAG artifacts.
+    Args:
+        None.
+    Returns:
+        list[Path]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
+    return find_jsons(
+        [
+            "normalized.json",
+            "normalized_units.json",
+            "*normalized*.json",
+        ]
+    )
 
 
 def find_rag_jsons() -> list[Path]:
-    return find_jsons([
-        "rag_units.json",
-        "final_rag_output.json",
-        "*rag*.json",
-    ])
+    """
+    Find rag jsons.
+
+    Purpose:
+        Implements find_rag_jsons for the developer tooling layer used to inspect
+            extracted documents and RAG artifacts.
+    Args:
+        None.
+    Returns:
+        list[Path]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
+    return find_jsons(
+        [
+            "rag_units.json",
+            "final_rag_output.json",
+            "*rag*.json",
+        ]
+    )
 
 
 def load_json(path: Path) -> Any:
+    """
+    Load json.
+
+    Purpose:
+        Implements load_json for the developer tooling layer used to inspect extracted
+            documents and RAG artifacts.
+    Args:
+        path (Path): Filesystem path used as input or output for the operation.
+    Returns:
+        Any: Result produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def get_file_id_from_pdf(pdf_path: Path) -> str | None:
     """
-    uploads/{file_id}/{uuid}.pdf
+    Get file id from pdf.
+
+    Purpose:
+        Implements get_file_id_from_pdf for the developer tooling layer used to inspect
+            extracted documents and RAG artifacts.
+    Args:
+        pdf_path (Path): Filesystem path to the source PDF document.
+    Returns:
+        str | None: Result produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
     """
     try:
         relative = pdf_path.relative_to(UPLOADS_ROOT)
@@ -72,7 +181,19 @@ def get_file_id_from_pdf(pdf_path: Path) -> str | None:
 
 def get_chat_file_from_extracted(json_path: Path) -> tuple[str | None, str | None]:
     """
-    extracted_files/{chat_id}/{file_id}/{json}
+    Get chat file from extracted.
+
+    Purpose:
+        Implements get_chat_file_from_extracted for the developer tooling layer used to
+            inspect extracted documents and RAG artifacts.
+    Args:
+        json_path (Path): Input value for the json path parameter.
+    Returns:
+        tuple[str | None, str | None]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
     """
     try:
         relative = json_path.relative_to(EXTRACTED_ROOT)
@@ -84,6 +205,22 @@ def get_chat_file_from_extracted(json_path: Path) -> tuple[str | None, str | Non
 
 
 def find_matching_json_for_pdf(pdf_path: Path, json_files: list[Path]) -> Path | None:
+    """
+    Find matching json for pdf.
+
+    Purpose:
+        Implements find_matching_json_for_pdf for the developer tooling layer used to
+            inspect extracted documents and RAG artifacts.
+    Args:
+        pdf_path (Path): Filesystem path to the source PDF document.
+        json_files (list[Path]): Input value for the json files parameter.
+    Returns:
+        Path | None: Filesystem path resolved or created by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     file_id = get_file_id_from_pdf(pdf_path)
     if not file_id:
         return None
@@ -100,13 +237,22 @@ def find_matching_json_for_pdf(pdf_path: Path, json_files: list[Path]) -> Path |
 # JSON normalization
 # -----------------------------
 
+
 def normalize_units(raw: Any) -> list[dict[str, Any]]:
     """
-    Accepts:
-    - list[dict]
-    - {"rag_units": [...]}
-    - {"normalized": [...]}
-    - Docling-style document JSON with texts/tables/pictures/groups
+    Normalize units.
+
+    Purpose:
+        Implements normalize_units for the developer tooling layer used to inspect
+            extracted documents and RAG artifacts.
+    Args:
+        raw (Any): Input value for the raw parameter.
+    Returns:
+        list[dict[str, Any]]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
     """
     if isinstance(raw, list):
         return [x for x in raw if isinstance(x, dict)]
@@ -155,6 +301,21 @@ def normalize_units(raw: Any) -> list[dict[str, Any]]:
 
 
 def extract_page_no_from_docling_item(item: dict[str, Any]) -> int | None:
+    """
+    Extract page no from docling item.
+
+    Purpose:
+        Implements extract_page_no_from_docling_item for the developer tooling layer
+            used to inspect extracted documents and RAG artifacts.
+    Args:
+        item (dict[str, Any]): Input value for the item parameter.
+    Returns:
+        int | None: Result produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     prov = item.get("prov")
     if isinstance(prov, list) and prov:
         first = prov[0]
@@ -165,6 +326,21 @@ def extract_page_no_from_docling_item(item: dict[str, Any]) -> int | None:
 
 
 def extract_bbox_from_docling_item(item: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Extract bbox from docling item.
+
+    Purpose:
+        Implements extract_bbox_from_docling_item for the developer tooling layer used
+            to inspect extracted documents and RAG artifacts.
+    Args:
+        item (dict[str, Any]): Input value for the item parameter.
+    Returns:
+        dict[str, Any] | None: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     if isinstance(item.get("bbox"), dict):
         return item["bbox"]
 
@@ -178,20 +354,60 @@ def extract_bbox_from_docling_item(item: dict[str, Any]) -> dict[str, Any] | Non
 
 
 def source_key(unit: dict[str, Any]) -> str:
-    return str(
-        unit.get("source_ref")
-        or unit.get("self_ref")
-        or unit.get("id")
-        or unit.get("ref")
-        or ""
-    )
+    """
+    Source key.
+
+    Purpose:
+        Implements source_key for the developer tooling layer used to inspect extracted
+            documents and RAG artifacts.
+    Args:
+        unit (dict[str, Any]): Input value for the unit parameter.
+    Returns:
+        str: Result produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
+    return str(unit.get("source_ref") or unit.get("self_ref") or unit.get("id") or unit.get("ref") or "")
 
 
 def text_len(unit: dict[str, Any]) -> int:
+    """
+    Text len.
+
+    Purpose:
+        Implements text_len for the developer tooling layer used to inspect extracted
+            documents and RAG artifacts.
+    Args:
+        unit (dict[str, Any]): Input value for the unit parameter.
+    Returns:
+        int: Result produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     return len(str(unit.get("text") or ""))
 
 
 def make_summary_df(units: list[dict[str, Any]], label: str) -> pd.DataFrame:
+    """
+    Make summary df.
+
+    Purpose:
+        Implements make_summary_df for the developer tooling layer used to inspect
+            extracted documents and RAG artifacts.
+    Args:
+        units (list[dict[str, Any]]): Input value for the units parameter.
+        label (str): Input value for the label parameter.
+    Returns:
+        pd.DataFrame: Result produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     rows = []
 
     for u in units:
@@ -218,10 +434,29 @@ def make_summary_df(units: list[dict[str, Any]], label: str) -> pd.DataFrame:
 
 
 def compare_units(
-        document_units: list[dict[str, Any]],
-        normalized_units: list[dict[str, Any]],
-        rag_units: list[dict[str, Any]],
+    document_units: list[dict[str, Any]],
+    normalized_units: list[dict[str, Any]],
+    rag_units: list[dict[str, Any]],
 ) -> pd.DataFrame:
+    """
+    Compare units.
+
+    Purpose:
+        Implements compare_units for the developer tooling layer used to inspect
+            extracted documents and RAG artifacts.
+    Args:
+        document_units (list[dict[str, Any]]): Input value for the document units
+            parameter.
+        normalized_units (list[dict[str, Any]]): Input value for the normalized units
+            parameter.
+        rag_units (list[dict[str, Any]]): Input value for the rag units parameter.
+    Returns:
+        pd.DataFrame: Result produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     doc_map = {source_key(u): u for u in document_units if source_key(u)}
     norm_map = {source_key(u): u for u in normalized_units if source_key(u)}
     rag_map = {source_key(u): u for u in rag_units if source_key(u)}
@@ -241,28 +476,21 @@ def compare_units(
                 "in_document": d is not None,
                 "in_normalized": n is not None,
                 "in_rag_units": r is not None,
-
                 "document_type": d.get("type") if d else None,
                 "normalized_type": n.get("type") if n else None,
                 "rag_type": r.get("type") if r else None,
-
                 "document_page": d.get("page_no") if d else None,
                 "normalized_page": n.get("page_no") if n else None,
                 "rag_page": r.get("page_no") if r else None,
-
                 "document_text_len": text_len(d) if d else 0,
                 "normalized_text_len": text_len(n) if n else 0,
                 "rag_text_len": text_len(r) if r else 0,
-
                 "normalized_has_bbox": bool(n and n.get("bbox")),
                 "rag_has_bbox": bool(r and r.get("bbox")),
-
                 "normalized_has_image": bool(n and n.get("image_path")),
                 "rag_has_image": bool(r and r.get("image_path")),
-
                 "normalized_table_md": bool(n and n.get("table_markdown")),
                 "rag_table_md": bool(r and r.get("table_markdown")),
-
                 "rag_has_table_vision": bool(r and r.get("table_vision")),
                 "rag_has_vision_metadata": bool(r and r.get("vision_metadata")),
             }
@@ -275,37 +503,79 @@ def compare_units(
 # PDF rendering
 # -----------------------------
 
+
 def render_pdf_page(pdf_path: Path, page_no: int, scale: int = 2) -> tuple[Image.Image, float]:
+    """
+    Render pdf page.
+
+    Purpose:
+        Implements render_pdf_page for the developer tooling layer used to inspect
+            extracted documents and RAG artifacts.
+    Args:
+        pdf_path (Path): Filesystem path to the source PDF document.
+        page_no (int): Input value for the page no parameter.
+        scale (int): Input value for the scale parameter.
+    Returns:
+        tuple[Image.Image, float]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     doc = fitz.open(str(pdf_path))
     page = doc[page_no - 1]
     pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
-    image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
     return image, page.rect.height
 
 
 def draw_bbox(
-        image: Image.Image,
-        bbox: dict,
-        page_height: float,
-        scale: int = 2,
-        outline: str = "red",
+    image: Image.Image,
+    bbox: dict,
+    page_height: float,
+    scale: int = 2,
+    outline: str = "red",
 ) -> Image.Image:
+    """
+    Draw bbox.
+
+    Purpose:
+        Implements draw_bbox for the developer tooling layer used to inspect extracted
+            documents and RAG artifacts.
+    Args:
+        image (Image.Image): Input value for the image parameter.
+        bbox (dict): Input value for the bbox parameter.
+        page_height (float): Input value for the page height parameter.
+        scale (int): Input value for the scale parameter.
+        outline (str): Input value for the outline parameter.
+    Returns:
+        Image.Image: Result produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     if not bbox:
         return image
 
     draw = ImageDraw.Draw(image)
 
-    l = bbox.get("l")
+    left = bbox.get("l")
     t = bbox.get("t")
     r = bbox.get("r")
     b = bbox.get("b")
 
-    if None in [l, t, r, b]:
+    if left is None or t is None or r is None or b is None:
         return image
 
     coord_origin = bbox.get("coord_origin")
 
-    x1 = l * scale
+    left = float(left)
+    t = float(t)
+    r = float(r)
+    b = float(b)
+
+    x1 = left * scale
     x2 = r * scale
 
     if coord_origin == "BOTTOMLEFT":
@@ -321,6 +591,21 @@ def draw_bbox(
 
 
 def resolve_image_path(image_path: str | None) -> Path | None:
+    """
+    Resolve image path.
+
+    Purpose:
+        Implements resolve_image_path for the developer tooling layer used to inspect
+            extracted documents and RAG artifacts.
+    Args:
+        image_path (str | None): Input value for the image path parameter.
+    Returns:
+        Path | None: Filesystem path resolved or created by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     if not image_path:
         return None
 
@@ -375,6 +660,24 @@ matched_rag_json = find_matching_json_for_pdf(pdf_path, rag_jsons)
 
 
 def select_json(label: str, files: list[Path], matched: Path | None, root: Path) -> Path | None:
+    """
+    Select json.
+
+    Purpose:
+        Implements select_json for the developer tooling layer used to inspect extracted
+            documents and RAG artifacts.
+    Args:
+        label (str): Input value for the label parameter.
+        files (list[Path]): Input value for the files parameter.
+        matched (Path | None): Input value for the matched parameter.
+        root (Path): Input value for the root parameter.
+    Returns:
+        Path | None: Filesystem path resolved or created by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     if not files:
         st.sidebar.warning(f"No {label} JSON found.")
         return None
@@ -436,14 +739,16 @@ document_units = normalize_units(document_raw) if document_raw is not None else 
 normalized_units = normalize_units(normalized_raw) if normalized_raw is not None else []
 rag_units = normalize_units(rag_raw) if rag_raw is not None else []
 
-tabs = st.tabs([
-    "Visual Page",
-    "Document JSON",
-    "Normalized JSON",
-    "RAG Units JSON",
-    "Compare",
-    "Raw JSON",
-])
+tabs = st.tabs(
+    [
+        "Visual Page",
+        "Document JSON",
+        "Normalized JSON",
+        "RAG Units JSON",
+        "Compare",
+        "Raw JSON",
+    ]
+)
 
 # -----------------------------
 # Tab 1: visual page
@@ -465,12 +770,8 @@ with tabs[0]:
     else:
         active_units = document_units
 
-    page_numbers = sorted(
-        {
-            u.get("page_no")
-            for u in active_units
-            if isinstance(u.get("page_no"), int)
-        }
+    page_numbers: list[int] = sorted(
+        page_no for page_no in {unit.get("page_no") for unit in active_units} if isinstance(page_no, int)
     )
 
     if not page_numbers:
@@ -496,11 +797,12 @@ with tabs[0]:
         if query.strip():
             q = query.lower().strip()
             page_units = [
-                u for u in page_units
+                u
+                for u in page_units
                 if q in str(u.get("text", "")).lower()
-                   or q in str(u.get("heading", "")).lower()
-                   or q in str(u.get("caption", "")).lower()
-                   or q in str(u.get("table_markdown", "")).lower()
+                or q in str(u.get("heading", "")).lower()
+                or q in str(u.get("caption", "")).lower()
+                or q in str(u.get("table_markdown", "")).lower()
             ]
 
         left, right = st.columns([1.2, 1])
@@ -673,13 +975,11 @@ with tabs[4]:
                 (compare_df["document_type"] == "table")
                 | (compare_df["normalized_type"] == "table")
                 | (compare_df["rag_type"] == "table")
-                ]
+            ]
         elif filter_mode == "rag has table markdown":
             filtered_df = compare_df[compare_df["rag_table_md"]]
         elif filter_mode == "rag missing table markdown":
-            filtered_df = compare_df[
-                (compare_df["rag_type"] == "table") & (~compare_df["rag_table_md"])
-                ]
+            filtered_df = compare_df[(compare_df["rag_type"] == "table") & (~compare_df["rag_table_md"])]
         elif filter_mode == "rag has vision metadata":
             filtered_df = compare_df[compare_df["rag_has_vision_metadata"]]
 

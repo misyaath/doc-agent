@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from psycopg_pool import ConnectionPool
+from typing import Any, cast
+
 from langgraph.checkpoint.postgres import PostgresSaver
+from psycopg_pool import ConnectionPool
 
 from core.settings import settings
 
@@ -16,8 +18,23 @@ checkpoint_pool = ConnectionPool(
     },
 )
 
-checkpointer = PostgresSaver(checkpoint_pool)
+checkpointer = PostgresSaver(cast(Any, checkpoint_pool))
 
 
 def setup_langgraph_checkpointer() -> None:
+    """
+    Setup langgraph checkpointer.
+
+    Purpose:
+        Implements setup_langgraph_checkpointer for the RAG agent layer that builds
+            prompts, retrieves context, and generates answers.
+    Args:
+        None.
+    Returns:
+        None: Performs work through side effects and does not return a value.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     checkpointer.setup()
