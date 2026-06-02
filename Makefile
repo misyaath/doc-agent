@@ -2,7 +2,8 @@
 
 PYTHON ?= .venv/bin/python
 
-quality: lint typecheck test
+quality:
+	$(PYTHON) quality
 
 lint:
 	$(PYTHON) -m ruff check .

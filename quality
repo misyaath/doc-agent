@@ -1,0 +1,35 @@
+"""Run the project quality checks from a single Python entry point."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+
+
+CHECKS = (
+    ("Lint", ("-m", "ruff", "check", ".")),
+    ("Type check", ("-m", "mypy", ".")),
+    ("Tests", ("-m", "pytest")),
+)
+
+
+def run_check(name: str, args: tuple[str, ...]) -> int:
+    """Run one quality command with the active Python interpreter."""
+    print(f"\n==> {name}", flush=True)
+    completed = subprocess.run((sys.executable, *args), check=False)
+    return completed.returncode
+
+
+def main() -> int:
+    """Run lint, type checking, and tests in sequence."""
+    for name, args in CHECKS:
+        return_code = run_check(name, args)
+        if return_code != 0:
+            return return_code
+
+    print("\nAll quality checks passed.", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
