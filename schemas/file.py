@@ -2,6 +2,24 @@ from pydantic import BaseModel, ConfigDict
 
 
 class FileUploadItemResponse(BaseModel):
+    """
+    File Upload Item Response.
+
+    Purpose:
+        Defines FileUploadItemResponse in the Pydantic schema layer that validates API
+            request and response payloads.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        file_id (str): Declared data field for this class.
+        chat_id (str): Declared data field for this class.
+        file_name (str): Declared data field for this class.
+        unique_generated_name (str): Declared data field for this class.
+        full_path (str): Declared data field for this class.
+    """
+
     file_id: str
     chat_id: str
     file_name: str
@@ -10,6 +28,23 @@ class FileUploadItemResponse(BaseModel):
 
 
 class FileUploadResponse(BaseModel):
+    """
+    File Upload Response.
+
+    Purpose:
+        Defines FileUploadResponse in the Pydantic schema layer that validates API
+            request and response payloads.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        model_config (Any): Class-level value used by this class.
+        user_id (int): Declared data field for this class.
+        chat_id (str): Declared data field for this class.
+        files (list[FileUploadItemResponse]): Declared data field for this class.
+    """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {

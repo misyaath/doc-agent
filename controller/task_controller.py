@@ -1,24 +1,54 @@
 import json
-import os
-from typing import Any
+from typing import Any, cast
 
 from celery.result import AsyncResult
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from redis import Redis
 
+from core.settings import settings
 from worker import celery_app
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
-
 
 def get_redis_client() -> Redis:
-    return Redis.from_url(REDIS_URL, decode_responses=True)
+    """
+    Get redis client.
+
+    Purpose:
+        Implements get_redis_client for the HTTP controller layer that validates
+            incoming requests, delegates to services, and shapes API responses.
+    Args:
+        None.
+    Returns:
+        Redis: Result produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
+    return Redis.from_url(settings.redis_url, decode_responses=True)
 
 
 class RetryTaskRequest(BaseModel):
+    """
+    Retry Task Request.
+
+    Purpose:
+        Defines RetryTaskRequest in the HTTP controller layer that validates incoming
+            requests, delegates to services, and shapes API responses.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        task_name (str | None): Declared data field for this class.
+        args (list[Any]): Declared data field for this class.
+        kwargs (dict[str, Any]): Declared data field for this class.
+        countdown (int): Declared data field for this class.
+    """
+
     task_name: str | None = Field(default=None, description="Celery task name override")
     args: list[Any] = Field(default_factory=list, description="Positional args for retry task")
     kwargs: dict[str, Any] = Field(default_factory=dict, description="Keyword args for retry task")
@@ -26,6 +56,22 @@ class RetryTaskRequest(BaseModel):
 
 
 def _collect_result_backend_tasks() -> list[dict[str, Any]]:
+    """
+    Collect result backend tasks.
+
+    Purpose:
+        Implements _collect_result_backend_tasks for the HTTP controller layer that
+            validates incoming requests, delegates to services, and shapes API
+            responses.
+    Args:
+        None.
+    Returns:
+        list[dict[str, Any]]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     redis_client = get_redis_client()
 
     tasks: list[dict[str, Any]] = []
@@ -37,7 +83,7 @@ def _collect_result_backend_tasks() -> list[dict[str, Any]]:
             continue
 
         try:
-            data = json.loads(raw)
+            data = json.loads(cast(str | bytes | bytearray, raw))
         except json.JSONDecodeError:
             continue
 
@@ -62,16 +108,46 @@ def _collect_result_backend_tasks() -> list[dict[str, Any]]:
 
 
 def _match_filters(task: dict[str, Any], status_filter: set[str], name_filter: str | None) -> bool:
+    """
+    Match filters.
+
+    Purpose:
+        Implements _match_filters for the HTTP controller layer that validates incoming
+            requests, delegates to services, and shapes API responses.
+    Args:
+        task (dict[str, Any]): Input value for the task parameter.
+        status_filter (set[str]): Input value for the status filter parameter.
+        name_filter (str | None): Input value for the name filter parameter.
+    Returns:
+        bool: True when the condition is satisfied; otherwise False.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     if status_filter and (task.get("status") or "").upper() not in status_filter:
         return False
-    if name_filter and task.get("task_name") != name_filter:
-        return False
-    return True
+    return not (name_filter and task.get("task_name") != name_filter)
 
 
 @router.get("/{task_id}", summary="Get task status by id")
 def get_task_status(task_id: str) -> dict[str, Any]:
-    result = AsyncResult(task_id, app=celery_app)
+    """
+    Get task status.
+
+    Purpose:
+        Implements get_task_status for the HTTP controller layer that validates incoming
+            requests, delegates to services, and shapes API responses.
+    Args:
+        task_id (str): Input value for the task id parameter.
+    Returns:
+        dict[str, Any]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
+    result: Any = AsyncResult(task_id, app=celery_app)
     response: dict[str, Any] = {"task_id": task_id, "status": result.status}
 
     if result.successful():
@@ -85,12 +161,28 @@ def get_task_status(task_id: str) -> dict[str, Any]:
 
 @router.get("", summary="List Celery tasks with filters")
 def list_tasks(
-        status_filter: str | None = Query(
-            default=None,
-            description="Comma-separated statuses: ACTIVE,RESERVED,SCHEDULED,SUCCESS,FAILURE,PENDING,RETRY",
-        ),
-        task_name: str | None = Query(default=None, description="Filter by exact Celery task name"),
+    status_filter: str | None = Query(
+        default=None,
+        description="Comma-separated statuses: ACTIVE,RESERVED,SCHEDULED,SUCCESS,FAILURE,PENDING,RETRY",
+    ),
+    task_name: str | None = Query(default=None, description="Filter by exact Celery task name"),
 ) -> dict[str, Any]:
+    """
+    List tasks.
+
+    Purpose:
+        Implements list_tasks for the HTTP controller layer that validates incoming
+            requests, delegates to services, and shapes API responses.
+    Args:
+        status_filter (str | None): Input value for the status filter parameter.
+        task_name (str | None): Input value for the task name parameter.
+    Returns:
+        dict[str, Any]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     allowed = {
         "ACTIVE",
         "RESERVED",
@@ -102,11 +194,7 @@ def list_tasks(
         "STARTED",
     }
 
-    parsed_statuses = {
-        s.strip().upper()
-        for s in (status_filter or "").split(",")
-        if s.strip()
-    }
+    parsed_statuses = {s.strip().upper() for s in (status_filter or "").split(",") if s.strip()}
 
     invalid = parsed_statuses - allowed
     if invalid:
@@ -128,11 +216,7 @@ def list_tasks(
 
     tasks = list(dedup.values())
 
-    filtered = [
-        task
-        for task in tasks
-        if _match_filters(task, parsed_statuses, task_name)
-    ]
+    filtered = [task for task in tasks if _match_filters(task, parsed_statuses, task_name)]
 
     return {
         "total": len(filtered),
@@ -146,6 +230,23 @@ def list_tasks(
 
 @router.post("/{task_id}/retry", summary="Retry Celery task by id")
 def retry_task(task_id: str, payload: RetryTaskRequest) -> dict[str, Any]:
+    """
+    Retry task.
+
+    Purpose:
+        Implements retry_task for the HTTP controller layer that validates incoming
+            requests, delegates to services, and shapes API responses.
+    Args:
+        task_id (str): Input value for the task id parameter.
+        payload (RetryTaskRequest): Validated request payload supplied by the API
+            caller.
+    Returns:
+        dict[str, Any]: Structured data produced by the operation.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     tasks = _collect_result_backend_tasks()
     source_task = next((task for task in tasks if task.get("task_id") == task_id), None)
 

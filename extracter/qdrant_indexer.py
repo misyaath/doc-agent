@@ -1,32 +1,115 @@
-from __future__ import annotations
-
 import hashlib
 import json
-import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import re
-import tiktoken
-
 import qdrant_client
-from qdrant_client import models
-from llama_index.core import Document, StorageContext, VectorStoreIndex
-from llama_index.core.node_parser import SemanticSplitterNodeParser
-from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
+from fastembed import LateInteractionTextEmbedding
+from llama_index.core import Document
+from llama_index.core.node_parser import SemanticDoubleMergingSplitterNodeParser, SentenceSplitter
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.ollama import OllamaEmbedding
-from llama_index.vector_stores.qdrant import QdrantVectorStore
+from qdrant_client import models
 
-MAX_EMBED_CHARS = int(os.getenv("MAX_EMBED_CHARS", "512"))
-MAX_ATOMIC_CHARS = int(os.getenv("MAX_ATOMIC_CHARS", "700"))
-CHUNK_OVERLAP_CHARS = int(os.getenv("CHUNK_OVERLAP_CHARS", "80"))
+from core.settings import settings
+
+
+class RagChunkingComponents:
+    """
+    Rag Chunking Components.
+
+    Purpose:
+        Defines RagChunkingComponents in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
+    def __init__(
+        self,
+        initial_threshold: float = 0.15,
+        merging_threshold: float = 0.15,
+        appending_threshold: float = 0.20,
+        max_chunk_size: int = 4000,
+        fallback_chunk_size: int = 512,
+        fallback_chunk_overlap: int = 128,
+    ) -> None:
+        """
+        Initialize the object with its required dependencies.
+
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to RagChunkingComponents; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            initial_threshold (float): Input value for the initial threshold parameter.
+            merging_threshold (float): Input value for the merging threshold parameter.
+            appending_threshold (float): Input value for the appending threshold
+                parameter.
+            max_chunk_size (int): Input value for the max chunk size parameter.
+            fallback_chunk_size (int): Input value for the fallback chunk size
+                parameter.
+            fallback_chunk_overlap (int): Input value for the fallback chunk overlap
+                parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside RagChunkingComponents so related code
+                remains cohesive and testable.
+        """
+        self.fallback_splitter = SentenceSplitter(
+            chunk_size=fallback_chunk_size,
+            chunk_overlap=fallback_chunk_overlap,
+        )
+
+        chunking_embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        self.splitter = SemanticDoubleMergingSplitterNodeParser(
+            initial_threshold=initial_threshold,
+            merging_threshold=merging_threshold,
+            appending_threshold=appending_threshold,
+            max_chunk_size=max_chunk_size,
+            embed_model=chunking_embed_model,
+        )
+
+        self.max_safe_chars = max_chunk_size
+
+
+# ============================================================
+# Config
+# ============================================================
 
 
 @dataclass(frozen=True)
 class RagIndexingConfig:
-    """Configuration required to build and persist RAG embeddings into Qdrant."""
+    """
+    Rag Indexing Config.
+
+    Purpose:
+        Defines RagIndexingConfig in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        doc_id (str | None): Declared data field for this class.
+        doc_title (str | None): Declared data field for this class.
+        source_file_path (str | Path | None): Declared data field for this class.
+        chat_id (str | None): Declared data field for this class.
+        file_id (str | None): Declared data field for this class.
+        qdrant_url (str): Declared data field for this class.
+        collection_name (str): Declared data field for this class.
+        embedding_model (str): Declared data field for this class.
+        ollama_url (str): Declared data field for this class.
+    """
+
     doc_id: str | None = None
     doc_title: str | None = None
     source_file_path: str | Path | None = None
@@ -34,78 +117,253 @@ class RagIndexingConfig:
     chat_id: str | None = None
     file_id: str | None = None
 
-    qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
-    collection_name: str = os.getenv("QDRANT_COLLECTION", "pdf_rag")
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
-    ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
+    qdrant_url: str = settings.qdrant_url
+    collection_name: str = settings.rag_collection_name
+
+    embedding_model: str = settings.embedding_model
+    ollama_url: str = settings.ollama_url
+
+
+@dataclass(frozen=True)
+class MarkdownRagChunk:
+    """
+    Markdown Rag Chunk.
+
+    Purpose:
+        Defines MarkdownRagChunk in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        id (str): Declared data field for this class.
+        order (int): Declared data field for this class.
+        heading (str | None): Declared data field for this class.
+        heading_level (int | None): Declared data field for this class.
+        text (str): Declared data field for this class.
+        chunking_strategy (str): Declared data field for this class.
+        page_start (int | None): Declared data field for this class.
+        page_end (int | None): Declared data field for this class.
+        image_paths (list[str] | None): Declared data field for this class.
+        source_refs (list[str] | None): Declared data field for this class.
+    """
+
+    id: str
+    order: int
+    heading: str | None
+    heading_level: int | None
+    text: str
+    chunking_strategy: str = "markdown_heading_v1"
+
+    page_start: int | None = None
+    page_end: int | None = None
+    image_paths: list[str] | None = None
+    source_refs: list[str] | None = None
+
+
+# ============================================================
+# JSON Loader
+# ============================================================
+
+
+class RagChunkLoader:
+    """
+    Rag Chunk Loader.
+
+    Purpose:
+        Defines RagChunkLoader in the document extraction pipeline that normalizes PDFs,
+            enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
+    def load(self, path: str | Path) -> list[dict[str, Any]]:
+        """
+        Load.
+
+        Purpose:
+            Implements load for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to RagChunkLoader; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            path (str | Path): Filesystem path used as input or output for the
+                operation.
+        Returns:
+            list[dict[str, Any]]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside RagChunkLoader so related code remains
+                cohesive and testable.
+        """
+        file_path = Path(path)
+
+        if not file_path.exists():
+            raise FileNotFoundError(f"RAG chunks file not found: {file_path}")
+
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+
+        if not isinstance(data, list):
+            raise ValueError("RAG chunks JSON must be a list of chunk dictionaries.")
+
+        return data
+
+
+# ============================================================
+# JSON Safety
+# ============================================================
+
+
+class JsonSafetyCleaner:
+    """
+    Json Safety Cleaner.
+
+    Purpose:
+        Defines JsonSafetyCleaner in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
+    def clean_value(self, value: Any) -> Any:
+        """
+        Clean value.
+
+        Purpose:
+            Implements clean_value for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to JsonSafetyCleaner; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            value (Any): Raw value being validated, normalized, or transformed.
+        Returns:
+            Any: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside JsonSafetyCleaner so related code remains
+                cohesive and testable.
+        """
+        try:
+            json.dumps(value, ensure_ascii=False)
+            return value
+        except TypeError:
+            return str(value)
+
+
+# ============================================================
+# Document Identity
+# ============================================================
 
 
 class DocumentIdentityBuilder:
-    """Builds stable document identity fields (title and doc_id) for indexing."""
+    """
+    Document Identity Builder.
+
+    Purpose:
+        Defines DocumentIdentityBuilder in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
 
     def clean_text(self, value: Any) -> str:
-        """Normalize whitespace and line breaks for title-like text values.
+        """
+        Clean text.
 
+        Purpose:
+            Implements clean_text for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to DocumentIdentityBuilder; uses that class state and dependencies
+                when available.
         Args:
-            value: Raw value that may contain title text.
-
+            self (Self): Current instance that owns the operation state.
+            value (Any): Raw value being validated, normalized, or transformed.
         Returns:
-            Cleaned single-line text, or empty string for falsy input.
+            str: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside DocumentIdentityBuilder so related code
+                remains cohesive and testable.
         """
         if not value:
             return ""
+
         return " ".join(str(value).replace("\n", " ").split()).strip()
 
     def detect_title(
-            self,
-            rag_units: list[dict[str, Any]],
-            fallback_file_path: str | Path | None = None,
+        self,
+        chunks: list[dict[str, Any]],
+        fallback_file_path: str | Path | None = None,
     ) -> str:
-        """Infer a document title from RAG units, then fallback to filename.
-
-        Args:
-            rag_units: Normalized units used for indexing.
-            fallback_file_path: Optional source file path used when title is missing.
-
-        Returns:
-            Best-effort document title.
         """
-        sorted_units = sorted(rag_units, key=lambda x: x.get("order", 0))
+        Detect title.
 
-        # Prefer first heading / section title.
-        for unit in sorted_units:
-            if unit.get("type") == "heading" or unit.get("label") == "section_header":
-                title = self.clean_text(unit.get("heading") or unit.get("text"))
-                if title:
-                    if title.startswith("Section:"):
-                        title = title.split("\n")[-1].strip()
-                    return title
+        Purpose:
+            Implements detect_title for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to DocumentIdentityBuilder; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chunks (list[dict[str, Any]]): Input value for the chunks parameter.
+            fallback_file_path (str | Path | None): Input value for the fallback file
+                path parameter.
+        Returns:
+            str: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside DocumentIdentityBuilder so related code
+                remains cohesive and testable.
+        """
+        sorted_chunks = sorted(chunks, key=lambda x: x.get("order", 0))
 
-        # Fallback to heading field from any unit.
-        for unit in sorted_units:
-            title = self.clean_text(unit.get("heading"))
+        for chunk in sorted_chunks:
+            title = self.clean_text(chunk.get("doc_title"))
             if title:
                 return title
 
-        # Fallback to filename.
+        for chunk in sorted_chunks:
+            heading = self.clean_text(chunk.get("heading"))
+            if heading and heading != "Document Start":
+                return heading
+
         if fallback_file_path:
             return Path(fallback_file_path).stem.replace("_", " ").replace("-", " ")
 
         return "Untitled Document"
 
     def create_doc_id(
-            self,
-            doc_title: str,
-            source_file_path: str | Path | None = None,
+        self,
+        doc_title: str,
+        source_file_path: str | Path | None = None,
     ) -> str:
-        """Create a stable UUID for a document identity.
+        """
+        Create doc id.
 
+        Purpose:
+            Implements create_doc_id for the document extraction pipeline that
+                normalizes PDFs, enriches visual content, builds RAG units, and indexes
+                data.
+        Class:
+            Belongs to DocumentIdentityBuilder; uses that class state and dependencies
+                when available.
         Args:
-            doc_title: Final resolved title for the document.
-            source_file_path: Optional source file path used for hashing.
-
+            self (Self): Current instance that owns the operation state.
+            doc_title (str): Input value for the doc title parameter.
+            source_file_path (str | Path | None): Input value for the source file path
+                parameter.
         Returns:
-            Deterministic UUID string based on title and optional file hash.
+            str: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside DocumentIdentityBuilder so related code
+                remains cohesive and testable.
         """
         if source_file_path and Path(source_file_path).exists():
             file_hash = self._compute_file_sha256(source_file_path)
@@ -116,21 +374,31 @@ class DocumentIdentityBuilder:
         return str(uuid.uuid5(uuid.NAMESPACE_URL, seed))
 
     def resolve(
-            self,
-            config: RagIndexingConfig,
-            rag_units: list[dict[str, Any]],
+        self,
+        config: RagIndexingConfig,
+        chunks: list[dict[str, Any]],
     ) -> RagIndexingConfig:
-        """Resolve missing identity fields in config.
+        """
+        Resolve.
 
+        Purpose:
+            Implements resolve for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to DocumentIdentityBuilder; uses that class state and dependencies
+                when available.
         Args:
-            config: Input indexing configuration.
-            rag_units: RAG units used to infer title and id.
-
+            self (Self): Current instance that owns the operation state.
+            config (RagIndexingConfig): Configuration object controlling this component.
+            chunks (list[dict[str, Any]]): Input value for the chunks parameter.
         Returns:
-            New `RagIndexingConfig` with resolved `doc_title` and `doc_id`.
+            RagIndexingConfig: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside DocumentIdentityBuilder so related code
+                remains cohesive and testable.
         """
         doc_title = config.doc_title or self.detect_title(
-            rag_units=rag_units,
+            chunks=chunks,
             fallback_file_path=config.source_file_path,
         )
 
@@ -142,24 +410,35 @@ class DocumentIdentityBuilder:
         return RagIndexingConfig(
             doc_id=doc_id,
             doc_title=doc_title,
+            source_file_path=config.source_file_path,
             chat_id=config.chat_id,
             file_id=config.file_id,
-            source_file_path=config.source_file_path,
             qdrant_url=config.qdrant_url,
             collection_name=config.collection_name,
             embedding_model=config.embedding_model,
             ollama_url=config.ollama_url,
         )
 
-    @staticmethod
-    def _compute_file_sha256(file_path: str | Path) -> str:
-        """Compute SHA-256 hash for a source file.
+    def _compute_file_sha256(self, file_path: str | Path) -> str:
+        """
+        Compute file sha256.
 
+        Purpose:
+            Implements _compute_file_sha256 for the document extraction pipeline that
+                normalizes PDFs, enriches visual content, builds RAG units, and indexes
+                data.
+        Class:
+            Belongs to DocumentIdentityBuilder; uses that class state and dependencies
+                when available.
         Args:
-            file_path: Path to file that should be hashed.
-
+            self (Self): Current instance that owns the operation state.
+            file_path (str | Path): Filesystem path to the document or artifact being
+                processed.
         Returns:
-            Hex digest of file content.
+            str: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside DocumentIdentityBuilder so related code
+                remains cohesive and testable.
         """
         path = Path(file_path)
         digest = hashlib.sha256()
@@ -171,606 +450,474 @@ class DocumentIdentityBuilder:
         return digest.hexdigest()
 
 
-class RagUnitLoader:
-    """Loads serialized RAG units from disk."""
-
-    def load(self, path: str | Path) -> list[dict[str, Any]]:
-        """Read and parse a JSON file into RAG unit dictionaries.
-
-        Args:
-            path: JSON file path containing serialized rag units.
-
-        Returns:
-            List of rag unit dictionaries.
-        """
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-
-
-class JsonSafetyCleaner:
-    """Ensures metadata values are JSON-serializable before persistence."""
-
-    def clean_value(self, value: Any) -> Any:
-        """Ensure value can be serialized to JSON.
-
-        Args:
-            value: Arbitrary metadata value.
-
-        Returns:
-            Original value if JSON-serializable, otherwise string representation.
-        """
-        try:
-            json.dumps(value, ensure_ascii=False)
-            return value
-        except TypeError:
-            return str(value)
-
-    def compact_bbox(self, bbox: Any) -> Any:
-        """Reduce bounding box payload to required metadata fields.
-
-        Args:
-            bbox: Raw bbox object from rag unit metadata.
-
-        Returns:
-            Compact bbox dictionary or unchanged input when not a dict.
-        """
-        if not isinstance(bbox, dict):
-            return bbox
-
-        return {
-            "l": bbox.get("l"),
-            "t": bbox.get("t"),
-            "r": bbox.get("r"),
-            "b": bbox.get("b"),
-            "coord_origin": bbox.get("coord_origin"),
-        }
-
-
-class RagIndexingPolicy:
-    """Contains inclusion rules for whether a unit should be indexed."""
-
-    def should_index(self, unit: dict[str, Any]) -> bool:
-        """Evaluate whether a unit should be indexed.
-
-        Args:
-            unit: Single rag unit with type-specific metadata flags.
-
-        Returns:
-            `True` if unit should be indexed, otherwise `False`.
-        """
-        unit_type = unit.get("type")
-
-        if unit_type == "picture":
-            metadata = unit.get("vision_metadata") or {}
-            return metadata.get("should_index_for_rag", True)
-
-        if unit_type == "table":
-            table_vision = unit.get("table_vision") or {}
-            return table_vision.get("should_index_for_rag", True)
-
-        return True
-
-
-class MetadataBuilder:
-    """Builds normalized metadata attached to each vector node."""
-
-    def __init__(
-            self,
-            config: RagIndexingConfig,
-            cleaner: JsonSafetyCleaner | None = None,
-            policy: RagIndexingPolicy | None = None,
-    ) -> None:
-        """Initialize metadata builder dependencies.
-
-        Args:
-            config: Runtime indexing configuration.
-            cleaner: Optional metadata value sanitizer.
-            policy: Optional indexing policy helper.
-        """
-        self._config = config
-        self._cleaner = cleaner or JsonSafetyCleaner()
-        self._policy = policy or RagIndexingPolicy()
-
-    def build(self, unit: dict[str, Any]) -> dict[str, Any]:
-        """Create cleaned metadata payload for one rag unit.
-
-        Args:
-            unit: Single rag unit to convert into metadata.
-
-        Returns:
-            JSON-safe metadata dictionary for vector node storage.
-        """
-        table_vision = unit.get("table_vision") or {}
-        vision_metadata = unit.get("vision_metadata") or {}
-
-        metadata = {
-            # Document identity
-            "doc_id": self._config.doc_id,
-            "doc_title": self._config.doc_title,
-
-            "chat_id": self._config.chat_id,
-            "file_id": self._config.file_id,
-
-            # Source identity
-            "source_ref": unit.get("source_ref") or unit.get("id"),
-            "source_refs": [unit.get("source_ref") or unit.get("id")],
-            "original_id": unit.get("id"),
-            "order": unit.get("order"),
-
-            # Type
-            "type": unit.get("type"),
-            "label": unit.get("label"),
-
-            # Location / citation
-            "page_no": unit.get("page_no"),
-            "page_start": unit.get("page_no"),
-            "page_end": unit.get("page_no"),
-            "bbox": self._cleaner.compact_bbox(unit.get("bbox")),
-            "bbox_list": [self._cleaner.compact_bbox(unit.get("bbox"))] if unit.get("bbox") else [],
-
-            # Structure
-            "heading": unit.get("heading"),
-            "heading_level": unit.get("heading_level"),
-            "heading_ref": unit.get("heading_ref"),
-            "heading_path": unit.get("heading_path") or [],
-
-            # Page furniture
-            "page_header": unit.get("page_header", ""),
-            "page_footer": unit.get("page_footer", ""),
-
-            # Display / reconstruction
-            "image_path": unit.get("image_path"),
-            "text": unit.get("text"),
-
-            # Table fields
-            "table_markdown": unit.get("table_markdown"),
-            "table_type": table_vision.get("table_type") or unit.get("table_type"),
-            "columns_summary": table_vision.get("columns_summary"),
-            "columns": unit.get("columns"),
-            "rows": unit.get("rows"),
-            "key_findings": table_vision.get("key_findings") or unit.get("key_findings") or [],
-            "rag_keywords": table_vision.get("rag_keywords") or unit.get("rag_keywords") or [],
-            "visible_text_summary": table_vision.get("visible_text_summary"),
-            "visible_text_long_summary": table_vision.get("visible_text_long_summary"),
-            "caption_summary": table_vision.get("caption_summary"),
-            "rag_search_text": table_vision.get("rag_search_text"),
-            "table_vision": table_vision,
-
-            # Picture fields
-            "caption": unit.get("caption"),
-            "vision_text": unit.get("vision_text"),
-            "vision_metadata": vision_metadata,
-
-            # Retrieval flag
-            "should_index_for_rag": self._policy.should_index(unit),
-        }
-
-        return {
-            key: self._cleaner.clean_value(value)
-            for key, value in metadata.items()
-            if value is not None
-        }
-
-
-class EmbeddingTextBuilder:
-    """Builds final text payload used as embedding input for each unit."""
-
-    def __init__(self, config: RagIndexingConfig) -> None:
-        """Store runtime configuration for embedding text construction.
-
-        Args:
-            config: Runtime indexing configuration.
-        """
-        self._config = config
-
-    def build(self, unit: dict[str, Any]) -> str:
-        """
-        The RAG pipeline already created final searchable text.
-
-        For tables, unit["text"] should already include:
-        - Section
-        - Table caption
-        - Table markdown
-        - Table description
-        - Visible table text
-        - Key findings
-        - RAG search text
-
-        So we use unit["text"] directly and only add lightweight document/page/type context.
-
-        Args:
-            unit: Single rag unit containing prepared searchable text.
-
-        Returns:
-            Final text used as embedding input.
-        """
-        prepared_text = (unit.get("text") or "").strip()
-
-        if not prepared_text:
-            return ""
-
-        prefix_parts: list[str] = []
-
-        if self._config.doc_title:
-            prefix_parts.append(f"Document: {self._config.doc_title}")
-
-        heading_path = unit.get("heading_path") or []
-
-        # Avoid duplicate section prefix if already included by previous RAG builder.
-        if heading_path and "Section:" not in prepared_text[:300]:
-            prefix_parts.append("Section: " + " > ".join(heading_path))
-
-        page_no = unit.get("page_no")
-        if page_no:
-            prefix_parts.append(f"Page: {page_no}")
-
-        unit_type = unit.get("type")
-        if unit_type:
-            prefix_parts.append(f"Type: {unit_type}")
-
-        if not prefix_parts:
-            return prepared_text
-
-        return "\n".join(prefix_parts) + "\n\n" + prepared_text
+# ============================================================
+# Embedding Model
+# ============================================================
 
 
 class EmbeddingModelFactory:
-    """Factory for creating the embedding model instance used in indexing."""
+    """
+    Embedding Model Factory.
+
+    Purpose:
+        Defines EmbeddingModelFactory in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
 
     def __init__(self, config: RagIndexingConfig) -> None:
-        """Store runtime configuration for embedding model creation.
+        """
+        Initialize the object with its required dependencies.
 
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to EmbeddingModelFactory; uses that class state and dependencies
+                when available.
         Args:
-            config: Runtime indexing configuration.
+            self (Self): Current instance that owns the operation state.
+            config (RagIndexingConfig): Configuration object controlling this component.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside EmbeddingModelFactory so related code
+                remains cohesive and testable.
         """
         self._config = config
 
     def create(self) -> OllamaEmbedding:
-        """Instantiate and return the configured Ollama embedding model.
+        """
+        Create.
 
+        Purpose:
+            Implements create for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to EmbeddingModelFactory; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
         Returns:
-            Configured `OllamaEmbedding` instance.
+            OllamaEmbedding: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside EmbeddingModelFactory so related code
+                remains cohesive and testable.
         """
         return OllamaEmbedding(
             model_name=self._config.embedding_model,
             base_url=self._config.ollama_url,
-            embed_batch_size=1
+            embed_batch_size=1,
+            ollama_additional_kwargs={"num_ctx": 8192},
         )
 
 
-class NodeBuilder:
-    """Converts rag units into `TextNode` objects ready for vector indexing."""
+# ============================================================
+# Compact Payload Builder
+# ============================================================
+
+
+class CompactPayloadBuilder:
+    """
+    Compact Payload Builder.
+
+    Purpose:
+        Defines CompactPayloadBuilder in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
 
     def __init__(
-            self,
-            config: RagIndexingConfig,
-            metadata_builder: MetadataBuilder,
-            text_builder: EmbeddingTextBuilder,
-            model_factory: EmbeddingModelFactory,
-            policy: RagIndexingPolicy | None = None,
+        self,
+        config: RagIndexingConfig,
+        cleaner: JsonSafetyCleaner | None = None,
     ) -> None:
-        """Initialize node builder services.
+        """
+        Initialize the object with its required dependencies.
 
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to CompactPayloadBuilder; uses that class state and dependencies
+                when available.
         Args:
-            config: Runtime indexing configuration.
-            metadata_builder: Builds node metadata from rag units.
-            text_builder: Builds embedding text from rag units.
-            model_factory: Creates embedding model for semantic splitting.
-            policy: Optional indexing policy helper.
+            self (Self): Current instance that owns the operation state.
+            config (RagIndexingConfig): Configuration object controlling this component.
+            cleaner (JsonSafetyCleaner | None): Input value for the cleaner parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside CompactPayloadBuilder so related code
+                remains cohesive and testable.
         """
         self._config = config
-        self._metadata_builder = metadata_builder
-        self._text_builder = text_builder
-        self._model_factory = model_factory
-        self._policy = policy or RagIndexingPolicy()
-        self._length_guard = TokenLengthGuard(
-            max_tokens=MAX_EMBED_CHARS,
-            overlap_tokens=CHUNK_OVERLAP_CHARS,
-        )
+        self._cleaner = cleaner or JsonSafetyCleaner()
 
-        self._atomic_length_guard = TokenLengthGuard(
-            max_tokens=MAX_ATOMIC_CHARS,
-            overlap_tokens=CHUNK_OVERLAP_CHARS,
-        )
-
-    def build_all(self, rag_units: list[dict[str, Any]]) -> list[TextNode]:
-        """Build semantic and atomic nodes from all indexable rag units.
-
-        Args:
-            rag_units: Source rag units from normalization/enrichment pipeline.
-
-        Returns:
-            List of text nodes ready for vector indexing.
+    def build(
+        self,
+        chunk: dict[str, Any],
+        text: str,
+        point_id: str,
+        chunk_index: int,
+    ) -> dict[str, Any]:
         """
-        embed_model = self._model_factory.create()
+        Build.
 
-        text_nodes = self._build_semantic_text_nodes(
-            rag_units=rag_units,
-            embed_model=embed_model,
-        )
-
-        atomic_nodes = self._build_atomic_nodes(
-            rag_units=rag_units,
-        )
-
-        return text_nodes + atomic_nodes
-
-    def _source_relationships(self) -> dict[NodeRelationship, RelatedNodeInfo]:
-        """Attach source document identity so LlamaIndex/Qdrant ref_doc_id is not None."""
-        if not self._config.doc_id:
-            return {}
-
-        return {
-            NodeRelationship.SOURCE: RelatedNodeInfo(
-                node_id=self._config.doc_id,
-                metadata={
-                    "doc_id": self._config.doc_id,
-                    "doc_title": self._config.doc_title,
-                    "chat_id": self._config.chat_id,
-                    "file_id": self._config.file_id,
-                },
-            )
+        Purpose:
+            Implements build for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to CompactPayloadBuilder; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chunk (dict[str, Any]): Input value for the chunk parameter.
+            text (str): Input value for the text parameter.
+            point_id (str): Input value for the point id parameter.
+            chunk_index (int): Input value for the chunk index parameter.
+        Returns:
+            dict[str, Any]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside CompactPayloadBuilder so related code
+                remains cohesive and testable.
+        """
+        payload = {
+            "text": text,
+            "node_id": point_id,
+            "chat_id": self._config.chat_id,
+            "file_id": self._config.file_id,
+            "doc_id": self._config.doc_id,
+            "doc_title": self._config.doc_title,
+            "chunk_id": chunk.get("id") or f"{self._config.doc_id}_chunk_{chunk_index:05d}",
+            "chunk_index": chunk_index,
+            "order": chunk.get("order", chunk_index),
+            "heading": chunk.get("heading"),
+            "heading_level": chunk.get("heading_level"),
+            "chunking_strategy": chunk.get("chunking_strategy", "markdown_heading_v1"),
+            "source_type": "processed_markdown",
         }
 
-    def _source_document_id(self, source_ref: Any) -> str:
-        """Create stable source Document id for semantic pre-split documents."""
-        return str(
-            uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                f"{self._config.doc_id}:{source_ref}:source-document",
-            )
-        )
+        optional_payload = {
+            "page_start": chunk.get("page_start"),
+            "page_end": chunk.get("page_end"),
+            "image_paths": chunk.get("image_paths"),
+            "source_refs": chunk.get("source_refs"),
+        }
 
-    def _build_semantic_text_nodes(
-            self,
-            rag_units: list[dict[str, Any]],
-            embed_model: OllamaEmbedding,
-    ) -> list[TextNode]:
-        """Build semantically split nodes for textual/group content.
+        for key, value in optional_payload.items():
+            if value is not None:
+                payload[key] = value
 
-        Args:
-            rag_units: Source rag units.
-            embed_model: Embedding model used by semantic splitter.
+        return {key: self._cleaner.clean_value(value) for key, value in payload.items() if value is not None}
 
-        Returns:
-            List of semantic text nodes.
+
+# ============================================================
+# Point ID Builder
+# ============================================================
+
+
+class QdrantPointIdBuilder:
+    """
+    Qdrant Point Id Builder.
+
+    Purpose:
+        Defines QdrantPointIdBuilder in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
+    def build(
+        self,
+        doc_id: str,
+        chunk_id: int,
+        chunk_index: int,
+    ) -> str:
         """
-        text_docs: list[Document] = []
+        Build.
 
-        for unit in rag_units:
-            if unit.get("type") not in {"text", "group"}:
-                continue
-
-            if not self._policy.should_index(unit):
-                continue
-
-            text = self._text_builder.build(unit)
-
-            if not text.strip():
-                continue
-
-            metadata = self._metadata_builder.build(unit)
-
-            # 1. TokenLengthGuard BEFORE semantic splitter
-            guarded_chunks = self._length_guard.split(text)
-
-            for chunk_index, chunk_text in enumerate(guarded_chunks):
-                source_ref = metadata.get("source_ref", unit.get("id", "unknown"))
-                source_doc_id = self._source_document_id(source_ref)
-
-                text_docs.append(
-                    Document(
-                        id_=source_doc_id,
-                        text=chunk_text,
-                        metadata={
-                            **metadata,
-                            "document_id": self._config.doc_id,
-                            "ref_doc_id": self._config.doc_id,
-                            "source_document_id": source_doc_id,
-                            "pre_semantic_chunk_index": chunk_index,
-                            "pre_semantic_chunk_count": len(guarded_chunks),
-                            "pre_semantic_chunking_strategy": "token_length_guard",
-                        },
-                    )
-                )
-
-        if not text_docs:
-            return []
-
-        # 2. Semantic splitter only receives safe-size documents
-        splitter = SemanticSplitterNodeParser(
-            buffer_size=1,
-            breakpoint_percentile_threshold=95,
-            embed_model=embed_model,
-            # Keep metadata on produced TextNode objects.
-            # If this is False in your installed LlamaIndex version, the semantic nodes
-            # may only keep chunk metadata and drop doc/page/source metadata.
-            include_metadata=True,
-            include_prev_next_rel=True,
-        )
-
-        semantic_nodes = splitter.get_nodes_from_documents(text_docs)
-
-        final_nodes: list[TextNode] = []
-
-        for i, node in enumerate(semantic_nodes):
-            source_ref = node.metadata.get("source_ref", "unknown")
-            pre_chunk_index = node.metadata.get("pre_semantic_chunk_index", 0)
-
-            # 3. Final TokenLengthGuard safety check
-            final_chunks = self._length_guard.split(node.text)
-
-            for final_index, final_text in enumerate(final_chunks):
-                chunking_strategy = (
-                    "semantic"
-                    if len(final_chunks) == 1
-                    else "semantic_token_length_guard"
-                )
-
-                node_metadata = {
-                    **node.metadata,
-                    "document_id": self._config.doc_id,
-                    "doc_id": self._config.doc_id,
-                    "ref_doc_id": self._config.doc_id,
-                    "chunk_id": f"{self._config.doc_id}_text_{len(final_nodes):05d}",
-                    "chunking_strategy": chunking_strategy,
-                    "semantic_node_index": i,
-                    "final_chunk_index": final_index,
-                    "final_chunk_count": len(final_chunks),
-                }
-
-                safe_node = TextNode(
-                    id_=str(
-                        uuid.uuid5(
-                            uuid.NAMESPACE_URL,
-                            f"{self._config.doc_id}:{source_ref}:semantic:{pre_chunk_index}:{i}:{final_index}",
-                        )
-                    ),
-                    text=final_text,
-                    metadata=node_metadata,
-                    relationships=self._source_relationships(),
-                )
-
-                final_nodes.append(exclude_metadata_from_embedding(safe_node))
-
-        return final_nodes
-
-    def _build_atomic_nodes(self, rag_units: list[dict[str, Any]]) -> list[TextNode]:
-        """Build non-semantic (atomic) nodes for picture/table content.
-
+        Purpose:
+            Implements build for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to QdrantPointIdBuilder; uses that class state and dependencies when
+                available.
         Args:
-            rag_units: Source rag units.
-
+            self (Self): Current instance that owns the operation state.
+            doc_id (str): Input value for the doc id parameter.
+            chunk_id (int): Input value for the chunk id parameter.
+            chunk_index (int): Input value for the chunk index parameter.
         Returns:
-            List of atomic text nodes.
+            str: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside QdrantPointIdBuilder so related code
+                remains cohesive and testable.
         """
-        nodes: list[TextNode] = []
-
-        for unit in rag_units:
-            unit_type = unit.get("type")
-
-            if unit_type not in {"table", "picture"}:
-                continue
-
-            if not self._policy.should_index(unit):
-                continue
-
-            text = self._text_builder.build(unit)
-
-            if not text.strip():
-                continue
-
-            metadata = self._metadata_builder.build(unit)
-            source_ref = metadata.get("source_ref", unit.get("id", "unknown"))
-
-            # Tables/pictures do not use SemanticSplitterNodeParser
-            guarded_chunks = self._atomic_length_guard.split(text)
-
-            for chunk_index, chunk_text in enumerate(guarded_chunks):
-                chunking_strategy = (
-                    "atomic"
-                    if len(guarded_chunks) == 1
-                    else "atomic_token_length_guard"
-                )
-
-                node_metadata = {
-                    **metadata,
-                    "document_id": self._config.doc_id,
-                    "doc_id": self._config.doc_id,
-                    "ref_doc_id": self._config.doc_id,
-                    "chunk_id": f"{self._config.doc_id}_{unit_type}_{unit.get('order')}_{chunk_index}",
-                    "chunking_strategy": chunking_strategy,
-                    "atomic_chunk_index": chunk_index,
-                    "atomic_chunk_count": len(guarded_chunks),
-                }
-
-                node = TextNode(
-                    id_=str(
-                        uuid.uuid5(
-                            uuid.NAMESPACE_URL,
-                            f"{self._config.doc_id}:{source_ref}:atomic:{chunk_index}",
-                        )
-                    ),
-                    text=chunk_text,
-                    metadata=node_metadata,
-                    relationships=self._source_relationships(),
-                )
-
-                nodes.append(exclude_metadata_from_embedding(node))
-
-        return nodes
+        seed = f"{doc_id}:{chunk_id}:{chunk_index}"
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, seed))
 
 
-class QdrantIndexSaver:
-    """Persists prepared nodes into Qdrant with dense + BM25 sparse vectors.
+class ColbertModelFactory:
+    """
+    Colbert Model Factory.
 
-    This replaces the pure LlamaIndex `QdrantVectorStore` save path because hybrid
-    search needs two named vectors on every point:
-    - `dense`: semantic vector from Ollama / nomic-embed-text
-    - `bm25`: sparse lexical vector from Qdrant BM25
+    Purpose:
+        Defines ColbertModelFactory in the document extraction pipeline that normalizes
+            PDFs, enriches visual content, builds RAG units, and indexes data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
+
+    def __init__(
+        self,
+        model_name: str = "colbert-ir/colbertv2.0",
+    ) -> None:
+        """
+        Initialize the object with its required dependencies.
+
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to ColbertModelFactory; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            model_name (str): Input value for the model name parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside ColbertModelFactory so related code remains
+                cohesive and testable.
+        """
+        self._model_name = model_name
+
+    def create(self) -> LateInteractionTextEmbedding:
+        """
+        Create.
+
+        Purpose:
+            Implements create for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to ColbertModelFactory; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+        Returns:
+            LateInteractionTextEmbedding: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside ColbertModelFactory so related code remains
+                cohesive and testable.
+        """
+        return LateInteractionTextEmbedding(self._model_name)
+
+
+# ============================================================
+# Qdrant Hybrid Saver
+# ============================================================
+
+
+class QdrantHybridIndexSaver:
+    """
+    Qdrant Hybrid Index Saver.
+
+    Purpose:
+        Defines QdrantHybridIndexSaver in the document extraction pipeline that
+            normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        DENSE_VECTOR_NAME (Any): Class-level value used by this class.
+        SPARSE_VECTOR_NAME (Any): Class-level value used by this class.
+        BM25_MODEL_NAME (Any): Class-level value used by this class.
+        COLBERT_VECTOR_NAME (Any): Class-level value used by this class.
+        COLBERT_VECTOR_SIZE (Any): Class-level value used by this class.
+        COLBERT_MODEL_NAME (Any): Class-level value used by this class.
     """
 
     DENSE_VECTOR_NAME = "dense"
     SPARSE_VECTOR_NAME = "bm25"
     BM25_MODEL_NAME = "Qdrant/bm25"
+    COLBERT_VECTOR_NAME = "colbert"
+    COLBERT_VECTOR_SIZE = 128
+    COLBERT_MODEL_NAME = "colbert-ir/colbertv2.0"
 
     def __init__(
-            self,
-            config: RagIndexingConfig,
-            model_factory: EmbeddingModelFactory,
+        self,
+        config: RagIndexingConfig,
+        embedding_model_factory: EmbeddingModelFactory,
+        payload_builder: CompactPayloadBuilder,
+        point_id_builder: QdrantPointIdBuilder | None = None,
+        colbert_model_factory: ColbertModelFactory | None = None,
+        chunking_components: RagChunkingComponents | None = None,
     ) -> None:
-        """Initialize saver dependencies.
+        """
+        Initialize the object with its required dependencies.
 
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to QdrantHybridIndexSaver; uses that class state and dependencies
+                when available.
         Args:
-            config: Runtime indexing configuration.
-            model_factory: Creates dense embed model for vector indexing.
+            self (Self): Current instance that owns the operation state.
+            config (RagIndexingConfig): Configuration object controlling this component.
+            embedding_model_factory (EmbeddingModelFactory): Input value for the
+                embedding model factory parameter.
+            payload_builder (CompactPayloadBuilder): Input value for the payload builder
+                parameter.
+            point_id_builder (QdrantPointIdBuilder | None): Input value for the point id
+                builder parameter.
+            colbert_model_factory (ColbertModelFactory | None): Input value for the
+                colbert model factory parameter.
+            chunking_components (RagChunkingComponents | None): Input value for the
+                chunking components parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside QdrantHybridIndexSaver so related code
+                remains cohesive and testable.
         """
         self._config = config
-        self._model_factory = model_factory
+        self._embedding_model_factory = embedding_model_factory
+        self._payload_builder = payload_builder
+        self._point_id_builder = point_id_builder or QdrantPointIdBuilder()
         self._client = qdrant_client.QdrantClient(url=self._config.qdrant_url)
+        self._colbert_model_factory = colbert_model_factory or ColbertModelFactory(self.COLBERT_MODEL_NAME)
+        self._chunking_components = chunking_components or RagChunkingComponents()
 
-    def save(self, nodes: list[TextNode]) -> dict[str, Any]:
-        """Create a hybrid Qdrant collection and write nodes into it.
-
-        Args:
-            nodes: Final text nodes prepared for indexing.
-
-        Returns:
-            Summary of saved points.
+    def _upsert_points_in_batches(
+        self,
+        points: list[models.PointStruct],
+        batch_size: int = 8,
+    ) -> None:
         """
-        if not nodes:
-            return {"collection_name": self._config.collection_name, "points_count": 0}
+        Upsert points in batches.
 
-        dense_model = self._model_factory.create()
+        Purpose:
+            Implements _upsert_points_in_batches for the document extraction pipeline
+                that normalizes PDFs, enriches visual content, builds RAG units, and
+                indexes data.
+        Class:
+            Belongs to QdrantHybridIndexSaver; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            points (list[models.PointStruct]): Input value for the points parameter.
+            batch_size (int): Input value for the batch size parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside QdrantHybridIndexSaver so related code
+                remains cohesive and testable.
+        """
+        for start in range(0, len(points), batch_size):
+            batch = points[start : start + batch_size]
+
+            print(f"Upserting Qdrant batch: {start // batch_size + 1}, points={len(batch)}")
+
+            self._client.upsert(
+                collection_name=self._config.collection_name,
+                points=batch,
+                wait=True,
+            )
+
+    def save(self, chunks: list[dict[str, Any]]) -> dict[str, Any]:
+        """
+        Save.
+
+        Purpose:
+            Implements save for the document extraction pipeline that normalizes PDFs,
+                enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to QdrantHybridIndexSaver; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chunks (list[dict[str, Any]]): Input value for the chunks parameter.
+        Returns:
+            dict[str, Any]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside QdrantHybridIndexSaver so related code
+                remains cohesive and testable.
+        """
+        valid_chunks = self._filter_valid_chunks(chunks)
+
+        if not valid_chunks:
+            return {
+                "collection_name": self._config.collection_name,
+                "points_count": 0,
+            }
+
+        dense_model = self._embedding_model_factory.create()
+        colbert_model = self._colbert_model_factory.create()
         dense_size = self._detect_dense_vector_size(dense_model)
+
         self._ensure_hybrid_collection(dense_size=dense_size)
 
-        avg_len = self._average_document_length(nodes)
+        avg_len = self._average_document_length(valid_chunks)
+
         points: list[models.PointStruct] = []
 
-        for node in nodes:
-            dense_vector = dense_model.get_text_embedding(node.text)
-            payload = self._build_payload(node=node)
+        for chunk_index, chunk in enumerate(valid_chunks):
+            text = (chunk.get("text") or "").strip()
 
-            points.append(
-                models.PointStruct(
-                    id=node.node_id,
+            nodes = self._chunking_components.splitter.get_nodes_from_documents([Document(text=text)])
+
+            for splitter_index, node in enumerate(nodes):
+                chunk_text = node.get_content()
+
+                print(f"chunk_text: {len(chunk_text)}")
+
+                point_id = self._point_id_builder.build(
+                    doc_id=self._config.doc_id or "unknown_doc",
+                    chunk_id=splitter_index,
+                    chunk_index=chunk_index,
+                )
+
+                dense_vector = dense_model.get_text_embedding(chunk_text)
+                colbert_vector = next(iter(colbert_model.passage_embed([text])))
+
+                payload = self._payload_builder.build(
+                    chunk=chunk,
+                    text=chunk_text,
+                    point_id=point_id,
+                    chunk_index=chunk_index,
+                )
+
+                point = models.PointStruct(
+                    id=point_id,
                     vector={
                         self.DENSE_VECTOR_NAME: dense_vector,
                         self.SPARSE_VECTOR_NAME: models.Document(
-                            text=node.text,
+                            text=text,
                             model=self.BM25_MODEL_NAME,
-                            options={"avg_len": avg_len},
+                            options={
+                                "avg_len": avg_len,
+                            },
                         ),
+                        self.COLBERT_VECTOR_NAME: colbert_vector.tolist(),
                     },
                     payload=payload,
                 )
-            )
 
-        self._client.upsert(
-            collection_name=self._config.collection_name,
-            points=points,
-            wait=True,
-        )
+                points.append(point)
+
+        self._upsert_points_in_batches(points=points, batch_size=5)
 
         return {
             "collection_name": self._config.collection_name,
@@ -780,17 +927,127 @@ class QdrantIndexSaver:
             "bm25_model": self.BM25_MODEL_NAME,
         }
 
+    def delete_existing_file_points(self) -> None:
+        """
+        Delete existing file points.
+
+        Purpose:
+            Implements delete_existing_file_points for the document extraction pipeline
+                that normalizes PDFs, enriches visual content, builds RAG units, and
+                indexes data.
+        Class:
+            Belongs to QdrantHybridIndexSaver; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside QdrantHybridIndexSaver so related code
+                remains cohesive and testable.
+        """
+
+        if not self._config.chat_id or not self._config.file_id:
+            return
+
+        if not self._client.collection_exists(self._config.collection_name):
+            return
+
+        self._client.delete(
+            collection_name=self._config.collection_name,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="chat_id",
+                            match=models.MatchValue(value=self._config.chat_id),
+                        ),
+                        models.FieldCondition(
+                            key="file_id",
+                            match=models.MatchValue(value=self._config.file_id),
+                        ),
+                    ]
+                )
+            ),
+            wait=True,
+        )
+
+    def _filter_valid_chunks(self, chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Filter valid chunks.
+
+        Purpose:
+            Implements _filter_valid_chunks for the document extraction pipeline that
+                normalizes PDFs, enriches visual content, builds RAG units, and indexes
+                data.
+        Class:
+            Belongs to QdrantHybridIndexSaver; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chunks (list[dict[str, Any]]): Input value for the chunks parameter.
+        Returns:
+            list[dict[str, Any]]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside QdrantHybridIndexSaver so related code
+                remains cohesive and testable.
+        """
+        valid_chunks: list[dict[str, Any]] = []
+
+        for chunk in chunks:
+            text = (chunk.get("text") or "").strip()
+
+            if not text:
+                continue
+
+            valid_chunks.append(chunk)
+
+        return valid_chunks
+
     def _detect_dense_vector_size(self, dense_model: OllamaEmbedding) -> int:
-        """Detect dense vector dimension from the configured embedding model."""
+        """
+        Detect dense vector size.
+
+        Purpose:
+            Implements _detect_dense_vector_size for the document extraction pipeline
+                that normalizes PDFs, enriches visual content, builds RAG units, and
+                indexes data.
+        Class:
+            Belongs to QdrantHybridIndexSaver; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            dense_model (OllamaEmbedding): Input value for the dense model parameter.
+        Returns:
+            int: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside QdrantHybridIndexSaver so related code
+                remains cohesive and testable.
+        """
         sample_vector = dense_model.get_text_embedding("dimension check")
         return len(sample_vector)
 
     def _ensure_hybrid_collection(self, dense_size: int) -> None:
-        """Create collection configured for dense semantic + BM25 sparse vectors."""
+        """
+        Ensure hybrid collection.
+
+        Purpose:
+            Implements _ensure_hybrid_collection for the document extraction pipeline
+                that normalizes PDFs, enriches visual content, builds RAG units, and
+                indexes data.
+        Class:
+            Belongs to QdrantHybridIndexSaver; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            dense_size (int): Input value for the dense size parameter.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside QdrantHybridIndexSaver so related code
+                remains cohesive and testable.
+        """
         if self._client.collection_exists(self._config.collection_name):
-            # Existing collection must already have named vectors `dense` and `bm25`.
-            # If your old collection was created by LlamaIndex with an unnamed vector,
-            # delete/recreate it before re-ingesting.
             return
 
         self._client.create_collection(
@@ -799,7 +1056,12 @@ class QdrantIndexSaver:
                 self.DENSE_VECTOR_NAME: models.VectorParams(
                     size=dense_size,
                     distance=models.Distance.COSINE,
-                )
+                ),
+                self.COLBERT_VECTOR_NAME: models.VectorParams(
+                    size=self.COLBERT_VECTOR_SIZE,
+                    distance=models.Distance.COSINE,
+                    multivector_config=models.MultiVectorConfig(comparator=models.MultiVectorComparator.MAX_SIM),
+                ),
             },
             sparse_vectors_config={
                 self.SPARSE_VECTOR_NAME: models.SparseVectorParams(
@@ -808,270 +1070,126 @@ class QdrantIndexSaver:
             },
         )
 
-    def _average_document_length(self, nodes: list[TextNode]) -> float:
-        """Estimate average token/word length for BM25 normalization."""
-        lengths = [max(1, len((node.text or "").split())) for node in nodes]
+    def _average_document_length(self, chunks: list[dict[str, Any]]) -> float:
+        """
+        Average document length.
+
+        Purpose:
+            Implements _average_document_length for the document extraction pipeline
+                that normalizes PDFs, enriches visual content, builds RAG units, and
+                indexes data.
+        Class:
+            Belongs to QdrantHybridIndexSaver; uses that class state and dependencies
+                when available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chunks (list[dict[str, Any]]): Input value for the chunks parameter.
+        Returns:
+            float: Result produced by the operation.
+        Why Added:
+            Centralizes this behavior inside QdrantHybridIndexSaver so related code
+                remains cohesive and testable.
+        """
+        lengths = [max(1, len((chunk.get("text") or "").split())) for chunk in chunks]
+
         return sum(lengths) / max(1, len(lengths))
 
-    def _build_payload(self, node: TextNode) -> dict[str, Any]:
-        """Build Qdrant payload from TextNode metadata and text."""
-        payload = {
-            **(node.metadata or {}),
-            "text": node.text,
-            "node_id": node.node_id,
-            "document_id": (node.metadata or {}).get("document_id") or self._config.doc_id,
-            "doc_id": (node.metadata or {}).get("doc_id") or self._config.doc_id,
-            "ref_doc_id": (node.metadata or {}).get("ref_doc_id") or self._config.doc_id,
-        }
 
-        # Make sure payload is JSON-safe.
-        cleaner = JsonSafetyCleaner()
-        return {key: cleaner.clean_value(value) for key, value in payload.items() if value is not None}
+# ============================================================
+# Main Ingestion Service
+# ============================================================
 
 
-def exclude_metadata_from_embedding(node: TextNode) -> TextNode:
-    """Exclude metadata fields from embedding text while retaining LLM metadata.
-
-    Args:
-        node: Node whose metadata should be excluded from embedding input.
-
-    Returns:
-        Same node instance with exclusion settings updated.
+class MarkdownRagQdrantIngestionService:
     """
-    node.excluded_embed_metadata_keys = list(node.metadata.keys())
-    node.excluded_llm_metadata_keys = []
-    return node
+    Markdown Rag Qdrant Ingestion Service.
 
-
-class TokenLengthGuard:
-    """Token-aware text splitter with overlap to stay within model limits."""
-
-    def __init__(
-            self,
-            max_tokens: int = 512,
-            overlap_tokens: int = 80,
-            encoding_name: str = "cl100k_base",
-    ) -> None:
-        """Initialize token-aware splitter settings.
-
-        Args:
-            max_tokens: Maximum tokens allowed per chunk.
-            overlap_tokens: Token overlap between adjacent chunks.
-            encoding_name: Tiktoken encoding name used for token counting.
-        """
-        self._max_tokens = max_tokens
-        self._overlap_tokens = overlap_tokens
-        self._encoding = tiktoken.get_encoding(encoding_name)
-
-    def count_tokens(self, text: str) -> int:
-        """Count tokens for text using configured tokenizer.
-
-        Args:
-            text: Input text.
-
-        Returns:
-            Number of tokens.
-        """
-        return len(self._encoding.encode(text or ""))
-
-    def split(self, text: str) -> list[str]:
-        """Split text into overlapping chunks constrained by `max_tokens`.
-
-        Args:
-            text: Input text to split.
-
-        Returns:
-            List of chunks that satisfy token constraints.
-        """
-        text = (text or "").strip()
-
-        if not text:
-            return []
-
-        if self.count_tokens(text) <= self._max_tokens:
-            return [text]
-
-        sentences = self._split_sentences(text)
-
-        chunks: list[str] = []
-        current_sentences: list[str] = []
-        current_tokens = 0
-
-        for sentence in sentences:
-            sentence_tokens = self.count_tokens(sentence)
-
-            # If one sentence itself is too large, hard split by tokens.
-            if sentence_tokens > self._max_tokens:
-                if current_sentences:
-                    chunks.append(" ".join(current_sentences).strip())
-                    current_sentences = []
-                    current_tokens = 0
-
-                chunks.extend(self._split_large_sentence(sentence))
-                continue
-
-            if current_tokens + sentence_tokens > self._max_tokens:
-                chunk = " ".join(current_sentences).strip()
-                if chunk:
-                    chunks.append(chunk)
-
-                overlap_text = self._build_overlap(current_sentences)
-                current_sentences = [overlap_text, sentence] if overlap_text else [sentence]
-                current_tokens = self.count_tokens(" ".join(current_sentences))
-
-            else:
-                current_sentences.append(sentence)
-                current_tokens += sentence_tokens
-
-        final_chunk = " ".join(current_sentences).strip()
-        if final_chunk:
-            chunks.append(final_chunk)
-
-        return chunks
-
-    def _split_sentences(self, text: str) -> list[str]:
-        """Split text into sentence-like segments to preserve boundaries.
-
-        Args:
-            text: Input text.
-
-        Returns:
-            Sentence-like text segments.
-        """
-        # Keeps sentence boundaries better than plain character slicing.
-        parts = re.split(r"(?<=[.!?])\s+|\n{2,}", text)
-        return [part.strip() for part in parts if part.strip()]
-
-    def _build_overlap(self, sentences: list[str]) -> str:
-        """Build trailing overlap text under overlap token budget.
-
-        Args:
-            sentences: Candidate sentences from current chunk.
-
-        Returns:
-            Combined overlap text.
-        """
-        overlap: list[str] = []
-        total_tokens = 0
-
-        for sentence in reversed(sentences):
-            sentence_tokens = self.count_tokens(sentence)
-
-            if total_tokens + sentence_tokens > self._overlap_tokens:
-                break
-
-            overlap.insert(0, sentence)
-            total_tokens += sentence_tokens
-
-        return " ".join(overlap).strip()
-
-    def _split_large_sentence(self, sentence: str) -> list[str]:
-        """Hard-split a long sentence by token windows with overlap.
-
-        Args:
-            sentence: Single sentence exceeding token budget.
-
-        Returns:
-            List of token-window chunks.
-        """
-        tokens = self._encoding.encode(sentence)
-
-        chunks: list[str] = []
-        start = 0
-
-        while start < len(tokens):
-            end = min(start + self._max_tokens, len(tokens))
-            chunk_tokens = tokens[start:end]
-            chunk_text = self._encoding.decode(chunk_tokens).strip()
-
-            if chunk_text:
-                chunks.append(chunk_text)
-
-            if end >= len(tokens):
-                break
-
-            start = max(0, end - self._overlap_tokens)
-
-        return chunks
-
-
-class RagQdrantIngestionService:
-    """Orchestrates file-based RAG unit ingestion into Qdrant."""
+    Purpose:
+        Defines MarkdownRagQdrantIngestionService in the document extraction pipeline
+            that normalizes PDFs, enriches visual content, builds RAG units, and indexes
+            data.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+    """
 
     def __init__(self, config: RagIndexingConfig) -> None:
-        """Initialize ingestion service with input configuration.
+        """
+        Initialize the object with its required dependencies.
 
+        Purpose:
+            Implements __init__ for the document extraction pipeline that normalizes
+                PDFs, enriches visual content, builds RAG units, and indexes data.
+        Class:
+            Belongs to MarkdownRagQdrantIngestionService; uses that class state and
+                dependencies when available.
         Args:
-            config: Input indexing configuration.
+            self (Self): Current instance that owns the operation state.
+            config (RagIndexingConfig): Configuration object controlling this component.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside MarkdownRagQdrantIngestionService so
+                related code remains cohesive and testable.
         """
         self._input_config = config
-        self._loader = RagUnitLoader()
+        self._loader = RagChunkLoader()
         self._identity_builder = DocumentIdentityBuilder()
 
-    def _build_runtime_services(
-            self,
-            config: RagIndexingConfig,
-    ) -> tuple[NodeBuilder, QdrantIndexSaver]:
-        """Wire runtime collaborators needed to transform and persist nodes.
-
-        Args:
-            config: Resolved runtime indexing configuration.
-
-        Returns:
-            Tuple of `(NodeBuilder, QdrantIndexSaver)`.
+    def ingest_from_file(
+        self,
+        chunks_path: str | Path,
+        delete_existing_file_points: bool = True,
+    ) -> dict[str, Any]:
         """
-        policy = RagIndexingPolicy()
-        cleaner = JsonSafetyCleaner()
+        Ingest from file.
 
-        metadata_builder = MetadataBuilder(
-            config=config,
-            cleaner=cleaner,
-            policy=policy,
-        )
-
-        text_builder = EmbeddingTextBuilder(
-            config=config,
-        )
-
-        model_factory = EmbeddingModelFactory(
-            config=config,
-        )
-
-        node_builder = NodeBuilder(
-            config=config,
-            metadata_builder=metadata_builder,
-            text_builder=text_builder,
-            model_factory=model_factory,
-            policy=policy,
-        )
-
-        saver = QdrantIndexSaver(
-            config=config,
-            model_factory=model_factory,
-        )
-
-        return node_builder, saver
-
-    def ingest_from_file(self, rag_units_path: str | Path) -> dict[str, Any]:
-        """Load RAG units, build nodes, index in Qdrant, and return summary metadata.
-
+        Purpose:
+            Implements ingest_from_file for the document extraction pipeline that
+                normalizes PDFs, enriches visual content, builds RAG units, and indexes
+                data.
+        Class:
+            Belongs to MarkdownRagQdrantIngestionService; uses that class state and
+                dependencies when available.
         Args:
-            rag_units_path: Path to JSON file containing rag units.
-
+            self (Self): Current instance that owns the operation state.
+            chunks_path (str | Path): Input value for the chunks path parameter.
+            delete_existing_file_points (bool): Input value for the delete existing file
+                points parameter.
         Returns:
-            Summary dictionary with identity, collection, and node count.
+            dict[str, Any]: Structured data produced by the operation.
+        Why Added:
+            Centralizes this behavior inside MarkdownRagQdrantIngestionService so
+                related code remains cohesive and testable.
         """
-        rag_units = self._loader.load(rag_units_path)
+        chunks = self._loader.load(chunks_path)
 
         runtime_config = self._identity_builder.resolve(
             config=self._input_config,
-            rag_units=rag_units,
+            chunks=chunks,
         )
 
-        node_builder, saver = self._build_runtime_services(runtime_config)
+        cleaner = JsonSafetyCleaner()
 
-        nodes = node_builder.build_all(rag_units)
-        save_result = saver.save(nodes)
+        embedding_model_factory = EmbeddingModelFactory(
+            config=runtime_config,
+        )
+
+        payload_builder = CompactPayloadBuilder(
+            config=runtime_config,
+            cleaner=cleaner,
+        )
+
+        saver = QdrantHybridIndexSaver(
+            config=runtime_config,
+            embedding_model_factory=embedding_model_factory,
+            payload_builder=payload_builder,
+        )
+
+        if delete_existing_file_points:
+            saver.delete_existing_file_points()
+
+        save_result = saver.save(chunks)
 
         return {
             "chat_id": runtime_config.chat_id,
@@ -1079,6 +1197,6 @@ class RagQdrantIngestionService:
             "doc_id": runtime_config.doc_id,
             "doc_title": runtime_config.doc_title,
             "collection_name": runtime_config.collection_name,
-            "nodes_count": len(nodes),
+            "chunks_count": len(chunks),
             "save_result": save_result,
         }

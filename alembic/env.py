@@ -1,19 +1,19 @@
-from logging.config import fileConfig
-import os
-from pathlib import Path
 import asyncio
+import os
+from logging.config import fileConfig
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-
 from database import Base
-from models.user import User
 from models.chat import Chat
-
+from models.file import File
+from models.file_process_stage import FileProcessStage
+from models.user import User
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -21,7 +21,21 @@ config = context.config
 
 
 def _load_dotenv(dotenv_path: Path) -> None:
-    """Minimal .env loader for Alembic runtime without extra dependencies."""
+    """
+    Load dotenv.
+
+    Purpose:
+        Implements _load_dotenv for the database migration layer that configures and
+            applies schema changes.
+    Args:
+        dotenv_path (Path): Input value for the dotenv path parameter.
+    Returns:
+        None: Performs work through side effects and does not return a value.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     if not dotenv_path.exists():
         return
 
@@ -37,6 +51,21 @@ def _load_dotenv(dotenv_path: Path) -> None:
 
 
 def _configure_sqlalchemy_url_from_env() -> None:
+    """
+    Configure sqlalchemy url from env.
+
+    Purpose:
+        Implements _configure_sqlalchemy_url_from_env for the database migration layer
+            that configures and applies schema changes.
+    Args:
+        None.
+    Returns:
+        None: Performs work through side effects and does not return a value.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     project_root = Path(__file__).resolve().parents[1]
     _load_dotenv(project_root / ".env")
 
@@ -48,14 +77,28 @@ def _configure_sqlalchemy_url_from_env() -> None:
 
         if database_url.startswith("postgresql://"):
             # Prefer asyncpg when no explicit driver is set.
-            database_url = database_url.replace(
-                "postgresql://", "postgresql+asyncpg://", 1
-            )
+            database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
         config.set_main_option("sqlalchemy.url", database_url)
 
 
 def _is_async_url(url: str) -> bool:
+    """
+    Is async url.
+
+    Purpose:
+        Implements _is_async_url for the database migration layer that configures and
+            applies schema changes.
+    Args:
+        url (str): Input value for the url parameter.
+    Returns:
+        bool: True when the condition is satisfied; otherwise False.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     return "+asyncpg://" in url
+
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -77,16 +120,20 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
+    """
+    Run migrations offline.
 
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
+    Purpose:
+        Implements run_migrations_offline for the database migration layer that
+            configures and applies schema changes.
+    Args:
+        None.
+    Returns:
+        None: Performs work through side effects and does not return a value.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
     """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
@@ -101,13 +148,24 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
+    """
+    Run migrations online.
 
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
+    Purpose:
+        Implements run_migrations_online for the database migration layer that
+            configures and applies schema changes.
+    Args:
+        None.
+    Returns:
+        None: Performs work through side effects and does not return a value.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
     """
     url = config.get_main_option("sqlalchemy.url")
+    if url is None:
+        raise RuntimeError("Alembic sqlalchemy.url is not configured")
     if _is_async_url(url):
         asyncio.run(_run_async_migrations())
         return
@@ -126,6 +184,21 @@ def run_migrations_online() -> None:
 
 
 async def _run_async_migrations() -> None:
+    """
+    Run async migrations.
+
+    Purpose:
+        Implements _run_async_migrations for the database migration layer that
+            configures and applies schema changes.
+    Args:
+        None.
+    Returns:
+        None: Performs work through side effects and does not return a value.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -138,7 +211,23 @@ async def _run_async_migrations() -> None:
     await connectable.dispose()
 
 
-def _do_run_migrations(connection) -> None:
+def _do_run_migrations(connection: Connection) -> None:
+    """
+    Do run migrations.
+
+    Purpose:
+        Implements _do_run_migrations for the database migration layer that configures
+            and applies schema changes.
+    Args:
+        connection (Connection): SQLAlchemy connection used by Alembic to run
+            migrations.
+    Returns:
+        None: Performs work through side effects and does not return a value.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()
