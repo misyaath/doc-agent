@@ -17,6 +17,7 @@ from repositories.chat_repository import ChatRepository
 from repositories.file_repository import FileRepository
 from schemas.agent import AgentChatRequest, AgentChatResponse
 from utils.sse import sse_event
+from utils.stream_helper import node_label
 
 
 class FileSummaryCacheService:
@@ -302,6 +303,11 @@ class RagAgentRunner:
         ):
             token = getattr(chunk, "content", None)
 
+            yield {
+                "type": "step",
+                "text": node_label(metadata.get("langgraph_node")),
+            }
+
             if not token:
                 continue
 
@@ -484,7 +490,7 @@ class AgentService:
         document_summary: list[dict[str, Any]] = []
         document_title = ""
 
-        yield sse_event("debug", {"message": "stream_chat started"})
+        yield sse_event("step", {"message": "Chat started"})
 
         try:
             document_title, document_summary = await self._prepare_chat(
@@ -492,14 +498,7 @@ class AgentService:
                 user_id=user_id,
             )
         except Exception as e:
-            yield sse_event("debug", {"message": f"Prepare chat failed {str(e)}"})
-
-        yield sse_event(
-            "start",
-            {
-                "chat_id": payload.chat_id,
-            },
-        )
+            yield sse_event("error", {"message": f"Prepare chat failed {str(e)}"})
 
         try:
             yield sse_event("debug", {"message": "started chat with ollama"})
@@ -516,7 +515,13 @@ class AgentService:
                             "text": item["text"],
                         },
                     )
-
+                elif item["type"] == "step":
+                    yield sse_event(
+                        "step",
+                        {
+                            "message": item["text"],
+                        },
+                    )
                 elif item["type"] == "done":
                     yield sse_event(
                         "done",

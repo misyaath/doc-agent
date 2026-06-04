@@ -18,12 +18,8 @@ def stream_step(
 
 def node_label(node_name: str | None) -> str:
     labels = {
-        "query_planner": "Understanding your question",
-        "rewrite_query": "Understanding your question",
+        "query_parsing": "Understanding your question",
         "retrieve": "Searching relevant document sections",
-        "retriever": "Searching relevant document sections",
-        "rerank": "Selecting the best evidence",
-        "answer": "Generating answer",
         "generate_answer": "Generating answer",
     }
 
@@ -32,12 +28,8 @@ def node_label(node_name: str | None) -> str:
 
 def node_done_label(node_name: str | None) -> str:
     labels = {
-        "query_planner": "Question understood",
-        "rewrite_query": "Question understood",
+        "query_parsing": "Question understood",
         "retrieve": "Relevant sections found",
-        "retriever": "Relevant sections found",
-        "rerank": "Best evidence selected",
-        "answer": "Answer generated",
         "generate_answer": "Answer generated",
     }
 
