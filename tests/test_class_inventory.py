@@ -144,8 +144,10 @@ EXPECTED_CLASSES: dict[str, set[str]] = {
     "schemas.chat": {
         "ChatCreateRequest",
         "ChatCreateResponse",
+        "ChatDetailResponse",
         "ChatFileProcessStageResponse",
         "ChatFileResponse",
+        "ChatHistoryMessageResponse",
         "ChatListItemResponse",
         "ChatListResponse",
     },

@@ -65,6 +65,33 @@ class ChatRepository:
         """
         return await self._db.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
 
+    async def get_by_id_and_user_id_with_files(self, *, chat_id: str, user_id: int) -> Chat | None:
+        """
+        Get by id and user id with files.
+
+        Purpose:
+            Implements get_by_id_and_user_id_with_files for the repository layer that
+                isolates database persistence from higher-level business logic.
+        Class:
+            Belongs to ChatRepository; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chat_id (str): Chat/session identifier used to scope retrieval, tasks, or
+                responses.
+            user_id (int): Authenticated user identifier used to scope the operation.
+        Returns:
+            Chat | None: Domain or persistence object produced by the operation.
+        Why Added:
+            Centralizes this behavior inside ChatRepository so related code remains
+                cohesive and testable.
+        """
+        return await self._db.scalar(
+            select(Chat)
+            .where(Chat.id == chat_id, Chat.user_id == user_id)
+            .options(selectinload(Chat.files).selectinload(FileModel.process_stages))
+        )
+
     async def create(self, *, chat_id: str, user_id: int, name: str) -> Chat:
         """
         Create.

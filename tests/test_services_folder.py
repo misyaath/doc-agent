@@ -11,6 +11,7 @@ import pytest
 from fastapi import HTTPException
 
 from schemas.agent import AgentChatRequest
+from schemas.chat import ChatHistoryMessageResponse
 from schemas.user import UserLoginRequest, UserRegisterRequest
 from services.agent_service import AgentService, FileSummaryCacheService
 from services.auth_service import hash_password
@@ -37,6 +38,12 @@ class FakeChatRepository:
         if not self.exists:
             return None
         return SimpleNamespace(chat_id=chat_id, user_id=user_id)
+
+    async def get_by_id_and_user_id_with_files(self, *, chat_id: str, user_id: int) -> SimpleNamespace | None:
+        """Return a fake eager-loaded chat only when the test config allows it."""
+        if not self.exists:
+            return None
+        return self.chats[0] if self.chats else None
 
     async def list_by_user_id_with_files(self, user_id: int) -> list[SimpleNamespace]:
         """Return fake chats for list endpoint tests."""
@@ -171,6 +178,47 @@ async def test_chat_service_lists_chats_with_file_process_data() -> None:
     assert response.chats[0].files[0].summary == [{"heading": "Intro"}]
     assert response.chats[0].files[0].process_status == "done"
     assert response.chats[0].files[0].process_stages[0].stage == "uploaded"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_returns_chat_detail_with_langgraph_history() -> None:
+    """Verify chat detail includes files and injected LangGraph history."""
+    repository = FakeChatRepository()
+    now = datetime(2026, 6, 4, 11, 30, 0)
+    repository.chats = [
+        SimpleNamespace(
+            id="chat-1",
+            name="Research",
+            created_at=now,
+            updated_at=None,
+            files=[
+                SimpleNamespace(
+                    file_id="file-1",
+                    file_name="document.pdf",
+                    title="Document title",
+                    summary=[{"heading": "Intro"}],
+                    created_at=now,
+                    process_stages=[
+                        SimpleNamespace(stage="done", status="done", created_at=now, updated_at=now),
+                    ],
+                )
+            ],
+        )
+    ]
+
+    service = ChatService(
+        chat_repository=repository,  # type: ignore[arg-type]
+        chat_history_loader=lambda chat_id: [
+            ChatHistoryMessageResponse(role="user", content=f"question for {chat_id}"),
+            ChatHistoryMessageResponse(role="assistant", content="answer"),
+        ],
+    )
+    response = await service.get_chat_detail(chat_id="chat-1", user_id=42)
+
+    assert response.chat_id == "chat-1"
+    assert response.files[0].process_status == "done"
+    assert response.history[0].role == "user"
+    assert response.history[0].content == "question for chat-1"
 
 
 @pytest.mark.asyncio

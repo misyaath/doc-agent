@@ -387,6 +387,56 @@ curl -X GET http://localhost:8080/chats \
   -H "Authorization: Bearer <access_token>"
 ```
 
+#### `GET /chats/{chat_id}`
+
+Returns one chat with file metadata, processing status, and persisted LangGraph chat history from the checkpoint database.
+
+Authentication: required.
+
+Response `200`:
+
+```json
+{
+  "chat_id": "8bb6bda8-b84f-4908-8a2c-06d3e016726c",
+  "name": "Research notes",
+  "created_at": "2026-06-04T11:00:00",
+  "updated_at": null,
+  "files": [
+    {
+      "file_id": "f4f2919c-77fb-4a23-bab1-cd4b95c7b7ca",
+      "file_name": "document.pdf",
+      "title": "Document title",
+      "summary": [{"heading": "Intro", "summary": "Overview"}],
+      "process_status": "done",
+      "process_stages": [
+        {
+          "stage": "uploaded",
+          "status": "done",
+          "updated_at": "2026-06-04T11:01:00"
+        }
+      ]
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": "What is this document about?"
+    },
+    {
+      "role": "assistant",
+      "content": "The document is about..."
+    }
+  ]
+}
+```
+
+Example:
+
+```bash
+curl -X GET http://localhost:8080/chats/8bb6bda8-b84f-4908-8a2c-06d3e016726c \
+  -H "Authorization: Bearer <access_token>"
+```
+
 ### Files Service
 
 #### `POST /files/upload`

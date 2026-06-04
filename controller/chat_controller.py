@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status
 
 from middleware.auth_middleware import get_current_user_id
-from schemas.chat import ChatCreateRequest, ChatCreateResponse, ChatListResponse
+from schemas.chat import ChatCreateRequest, ChatCreateResponse, ChatDetailResponse, ChatListResponse
 from services.chat_service import ChatService, get_chat_service
 
 router = APIRouter(prefix="/chats", tags=["chats"])
@@ -71,3 +71,37 @@ async def list_chats(
         from needing to know lower-level implementation details.
     """
     return await service.list_chats(user_id=user_id)
+
+
+@router.get(
+    "/{chat_id}",
+    response_model=ChatDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get chat detail",
+    description="Returns chat metadata, files, processing state, and LangGraph chat history.",
+)
+async def get_chat_detail(
+    chat_id: str,
+    service: ChatService = Depends(get_chat_service),
+    user_id: int = Depends(get_current_user_id),
+) -> ChatDetailResponse:
+    """
+    Get chat detail.
+
+    Purpose:
+        Implements get_chat_detail for the HTTP controller layer that validates incoming
+            requests, delegates to services, and shapes API responses.
+    Args:
+        chat_id (str): Chat/session identifier used to scope retrieval, tasks, or
+            responses.
+        service (ChatService): Injected service dependency that performs the business
+            operation.
+        user_id (int): Authenticated user identifier used to scope the operation.
+    Returns:
+        ChatDetailResponse: API response model returned to the client.
+    Why Added:
+        Provides a documented entry point for this module-level behavior and keeps
+            callers
+        from needing to know lower-level implementation details.
+    """
+    return await service.get_chat_detail(chat_id=chat_id, user_id=user_id)

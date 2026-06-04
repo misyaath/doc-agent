@@ -311,13 +311,14 @@ class RagAgentRunner:
             if not token:
                 continue
 
-            yield {
-                "type": "token",
-                "text": token,
-                "metadata": {
-                    "node": metadata.get("langgraph_node") if isinstance(metadata, dict) else None,
-                },
-            }
+            if metadata.get("langgraph_node") == "generate_answer":
+                yield {
+                    "type": "token",
+                    "text": token,
+                    "metadata": {
+                        "node": metadata.get("langgraph_node") if isinstance(metadata, dict) else None,
+                    },
+                }
 
         yield {
             "type": "done",

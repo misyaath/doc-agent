@@ -218,3 +218,51 @@ class ChatListResponse(BaseModel):
 
     user_id: int
     chats: list[ChatListItemResponse]
+
+
+class ChatHistoryMessageResponse(BaseModel):
+    """
+    Chat History Message Response.
+
+    Purpose:
+        Defines ChatHistoryMessageResponse in the Pydantic schema layer that validates
+            API request and response payloads.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        role (str): Declared data field for this class.
+        content (Any): Declared data field for this class.
+    """
+
+    role: str
+    content: Any
+
+
+class ChatDetailResponse(BaseModel):
+    """
+    Chat Detail Response.
+
+    Purpose:
+        Defines ChatDetailResponse in the Pydantic schema layer that validates API
+            request and response payloads.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        chat_id (str): Declared data field for this class.
+        name (str): Declared data field for this class.
+        created_at (datetime): Declared data field for this class.
+        updated_at (datetime | None): Declared data field for this class.
+        files (list[ChatFileResponse]): Declared data field for this class.
+        history (list[ChatHistoryMessageResponse]): Declared data field for this class.
+    """
+
+    chat_id: str
+    name: str
+    created_at: datetime
+    updated_at: datetime | None
+    files: list[ChatFileResponse]
+    history: list[ChatHistoryMessageResponse]
