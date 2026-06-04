@@ -181,7 +181,6 @@ class RagAgentRunner:
             self (Self): Current instance that owns the operation state.
             document_summary (list[dict[str, Any]]): Input value for the document
                 summary parameter.
-            document_title (str): Input value for the document title parameter.
         Returns:
             Any: Result produced by the operation.
         Why Added:
@@ -225,7 +224,6 @@ class RagAgentRunner:
                 responses.
             document_summary (list[dict[str, Any]]): Input value for the document
                 summary parameter.
-            document_title (str): Input value for the document title parameter.
         Returns:
             dict[str, Any]: Structured data produced by the operation.
         Why Added:
@@ -275,7 +273,6 @@ class RagAgentRunner:
                 responses.
             document_summary (list[dict[str, Any]]): Input value for the document
                 summary parameter.
-            document_title (str): Input value for the document title parameter.
         Returns:
             Iterator[str]: Streaming response or iterator that yields incremental
                 output.
@@ -368,7 +365,7 @@ class AgentService:
         *,
         payload: AgentChatRequest,
         user_id: int,
-    ) -> tuple[str, Any]:
+    ) -> list[dict[str, Any]]:
         """
         Prepare chat.
 
@@ -384,7 +381,8 @@ class AgentService:
                 caller.
             user_id (int): Authenticated user identifier used to scope the operation.
         Returns:
-            tuple[str, Any]: Structured data produced by the operation.
+            list[dict[str, Any]]: File title and summary records used for prompt
+                construction.
         Why Added:
             Centralizes this behavior inside AgentService so related code remains
                 cohesive and testable.

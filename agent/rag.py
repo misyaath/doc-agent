@@ -652,7 +652,6 @@ class RagGraphFactory:
             self (Self): Current instance that owns the operation state.
             document_summary (list[dict[str, Any]]): Input value for the document
                 summary parameter.
-            document_title (str): Input value for the document title parameter.
             retriever (QdrantRagRetriever): Input value for the retriever parameter.
             llm_model (str): Input value for the llm model parameter.
             ollama_base_url (str): Input value for the ollama base url parameter.

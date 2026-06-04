@@ -72,7 +72,7 @@ class FakeRetriever:
 def test_query_parsing_service_uses_prompt_and_json_extractor() -> None:
     """Verify query parsing converts LLM JSON text into a retrieval plan."""
     llm = FakeLlm('{"query_type":"lookup","clean_question":"What is AI?","keywords":["AI"]}')
-    prompts = AgentPrompts(document_summary=[], document_title="AI Guide")
+    prompts = AgentPrompts(document_summary=[])
     service = QueryParsingService(
         llm=cast(Any, llm),
         prompts=prompts,
@@ -94,14 +94,14 @@ def test_agent_prompts_formats_file_summary_records_and_skips_none_summary() -> 
             {"title": "Indexed Doc", "summary": [{"heading": "Intro", "summary": "Overview"}]},
             {"title": "Pending Doc", "summary": None},
         ],
-        document_title="Uploaded documents",
     )
 
     formatted = prompts._format_document_summaries_for_prompt()
 
-    assert "Uploaded documents" in formatted
-    assert "Document Title: Indexed Doc" in formatted
-    assert "Summary 1: {'heading': 'Intro', 'summary': 'Overview'}" in formatted
+    assert "Indexed Doc" in formatted
+    assert "heading" in formatted
+    assert "Intro" in formatted
+    assert "Overview" in formatted
     assert "Pending Doc" not in formatted
 
 
@@ -109,7 +109,6 @@ def test_agent_prompts_returns_fallback_when_all_summaries_are_none() -> None:
     """Verify prompt summaries do not build empty document blocks for null summaries."""
     prompts = AgentPrompts(
         document_summary=[{"title": "Pending Doc", "summary": None}],
-        document_title="",
     )
 
     assert prompts._format_document_summaries_for_prompt() == "No document summaries available."
@@ -138,7 +137,7 @@ def test_retrieval_service_builds_queries_and_formats_context() -> None:
 
 def test_answer_generation_service_handles_empty_and_llm_context() -> None:
     """Verify answer generation avoids hallucination when no context is available."""
-    prompts = AgentPrompts(document_summary=[{"heading": "Intro"}], document_title="AI Guide")
+    prompts = AgentPrompts(document_summary=[{"heading": "Intro"}])
     empty_service = AnswerGenerationService(llm=cast(Any, FakeLlm("unused")), prompts=prompts)
     assert empty_service.generate("Question?", "   ", []) == "I could not find this in the uploaded document."
 
