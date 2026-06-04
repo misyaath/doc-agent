@@ -295,7 +295,7 @@ async def test_agent_service_prepare_chat_authorizes_and_requires_indexed_files(
 
     title, summary = await service._prepare_chat(payload=payload, user_id=1)
     assert title == "Doc"
-    assert summary == [{"heading": "Intro"}]
+    assert summary == [{"title": "Doc", "summary": [{"heading": "Intro"}]}]
 
     forbidden = AgentService(
         chat_repository=FakeChatRepository(exists=False),  # type: ignore[arg-type]

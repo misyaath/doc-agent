@@ -167,7 +167,6 @@ class RagAgentRunner:
         self,
         *,
         document_summary: list[dict[str, Any]],
-        document_title: str,
     ) -> Any:
         """
         Build graph.
@@ -198,7 +197,6 @@ class RagAgentRunner:
 
         return RagGraphFactory(
             document_summary=document_summary,
-            document_title=document_title,
             retriever=retriever,
             llm_model=self._text_model,
             ollama_base_url=self._ollama_url,
@@ -210,7 +208,6 @@ class RagAgentRunner:
         prompt: str,
         chat_id: str,
         document_summary: list[dict[str, Any]],
-        document_title: str,
     ) -> dict[str, Any]:
         """
         Run.
@@ -243,7 +240,6 @@ class RagAgentRunner:
         )
         rag_graph = RagGraphFactory(
             document_summary=document_summary,
-            document_title=document_title,
             retriever=retriever,
             llm_model=self._text_model,
             ollama_base_url=self._ollama_url,
@@ -262,7 +258,6 @@ class RagAgentRunner:
         prompt: str,
         chat_id: str,
         document_summary: list[dict[str, Any]],
-        document_title: str,
     ) -> Iterator[dict[str, Any]]:
         """
         Stream.
@@ -290,7 +285,6 @@ class RagAgentRunner:
         """
         rag_graph = self._build_graph(
             document_summary=document_summary,
-            document_title=document_title,
         )
 
         inputs = {
@@ -414,10 +408,7 @@ class AgentService:
                 detail="No indexed files found for this chat",
             )
 
-        document_title = file_summaries[0].get("title", "")
-        document_summary = file_summaries[0].get("summary", "")
-
-        return document_title, document_summary
+        return file_summaries
 
     async def handle_chat(self, *, payload: AgentChatRequest, user_id: int) -> AgentChatResponse:
         """
@@ -440,17 +431,15 @@ class AgentService:
             Centralizes this behavior inside AgentService so related code remains
                 cohesive and testable.
         """
-        document_title, document_summary = await self._prepare_chat(
+        document_summary = await self._prepare_chat(
             payload=payload,
             user_id=user_id,
         )
-
         rag_result = await to_thread.run_sync(
             lambda: self._runner.run(
                 prompt=payload.prompt,
                 chat_id=payload.chat_id,
                 document_summary=document_summary,
-                document_title=document_title,
             )
         )
 
@@ -489,25 +478,24 @@ class AgentService:
                 cohesive and testable.
         """
         document_summary: list[dict[str, Any]] = []
-        document_title = ""
 
         yield sse_event("step", {"message": "Chat started"})
 
         try:
-            document_title, document_summary = await self._prepare_chat(
+            document_summary = await self._prepare_chat(
                 payload=payload,
                 user_id=user_id,
             )
         except Exception as e:
             yield sse_event("error", {"message": f"Prepare chat failed {str(e)}"})
 
+        # print(f"document_summary: {document_summary}")
         try:
             yield sse_event("debug", {"message": "started chat with ollama"})
             for item in self._runner.stream(
                 prompt=payload.prompt,
                 chat_id=payload.chat_id,
                 document_summary=document_summary,
-                document_title=document_title,
             ):
                 if item["type"] == "token":
                     yield sse_event(

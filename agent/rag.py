@@ -635,7 +635,6 @@ class RagGraphFactory:
     def __init__(
         self,
         document_summary: list[dict[str, Any]],
-        document_title: str,
         retriever: QdrantRagRetriever,
         llm_model: str = "llama3.1:8b",
         ollama_base_url: str = "http://localhost:11434",
@@ -663,7 +662,7 @@ class RagGraphFactory:
             Centralizes this behavior inside RagGraphFactory so related code remains
                 cohesive and testable.
         """
-        self.prompts = AgentPrompts(document_summary, document_title)
+        self.prompts = AgentPrompts(document_summary)
         self.llm = ChatOllama(
             model=llm_model,
             base_url=ollama_base_url,

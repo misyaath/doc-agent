@@ -20,7 +20,7 @@ class AgentPrompts:
         documented component instead of duplicating the same logic elsewhere.
     """
 
-    def __init__(self, document_summary: list[dict[str, Any]], document_title: str) -> None:
+    def __init__(self, document_summary: list[dict[str, Any]]) -> None:
         """
         Initialize the object with its required dependencies.
 
@@ -34,7 +34,6 @@ class AgentPrompts:
             self (Self): Current instance that owns the operation state.
             document_summary (list[dict[str, Any]]): Input value for the document
                 summary parameter.
-            document_title (str): Input value for the document title parameter.
         Returns:
             None: Performs work through side effects and does not return a value.
         Why Added:
@@ -42,7 +41,6 @@ class AgentPrompts:
                 cohesive and testable.
         """
         self.document_summary: list[dict[str, Any]] = document_summary
-        self.document_title: str = document_title
 
     def _format_document_summaries_for_prompt(self) -> str:
         """
@@ -62,28 +60,53 @@ class AgentPrompts:
             Centralizes this behavior inside AgentPrompts so related code remains
                 cohesive and testable.
         """
+
         if not self.document_summary:
             return "No document summaries available."
 
-        parts: list[str] = [f"{self.document_title}\n\n"]
+        parts: list[str] = []
+
+        def append_summary_block(title: str, summary: Any, parent_title: str | None = None) -> None:
+            if summary is None:
+                return
+
+            normalized_title = title.strip()
+            normalized_parent = (parent_title or "").strip()
+            should_add_title = normalized_title and normalized_title != normalized_parent
+
+            if isinstance(summary, dict):
+                if should_add_title:
+                    parts.append(normalized_title)
+                for section_title, section_summary in summary.items():
+                    append_summary_block(str(section_title), section_summary, normalized_title)
+                return
+
+            if isinstance(summary, list):
+                if should_add_title:
+                    parts.append(normalized_title)
+                for item in summary:
+                    if item is None:
+                        continue
+                    if isinstance(item, dict):
+                        for item_title, item_summary in item.items():
+                            append_summary_block(str(item_title), item_summary, normalized_title)
+                    else:
+                        parts.append(str(item))
+                return
+
+            if should_add_title:
+                parts.append(normalized_title)
+            parts.append(str(summary).strip())
 
         for doc in self.document_summary:
             document_title, sections = self._extract_title_and_sections(doc)
-            parts.append(f"\nDocument Title: {document_title}")
+            if sections is None:
+                continue
 
-            if isinstance(sections, dict):
-                for section_title, summary in sections.items():
-                    parts.append(
-                        f"""Section: {section_title}\nSummary: {summary}
-                        """.strip()
-                    )
-            elif isinstance(sections, list):
-                for index, item in enumerate(sections, start=1):
-                    parts.append(f"Summary {index}: {item}")
-            else:
-                parts.append(f"Summary: {sections}")
+            append_summary_block(document_title, sections)
 
-            parts.append("\n---")
+        if not parts:
+            return "No document summaries available."
 
         return "\n\n".join(parts)
 
@@ -109,7 +132,7 @@ class AgentPrompts:
         """
         if "summary" in doc and ("title" in doc or "file_id" in doc):
             title = str(doc.get("title") or doc.get("file_id") or "Untitled document").strip()
-            sections = doc.get("summary") or {}
+            sections = doc.get("summary")
             return title, sections
 
         # Legacy shape: {"Document Title": {...}}
