@@ -20,6 +20,7 @@ class Chat(Base):
 
     Attributes:
         id (Mapped[str]): Declared data field for this class.
+        name (Mapped[str]): Declared data field for this class.
         user_id (Mapped[int]): Declared data field for this class.
         created_at (Mapped[datetime]): Declared data field for this class.
         updated_at (Mapped[datetime | None]): Declared data field for this class.
@@ -30,6 +31,7 @@ class Chat(Base):
     __tablename__ = "chats"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(120), nullable=False, default="New Chat", server_default="New Chat")
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )

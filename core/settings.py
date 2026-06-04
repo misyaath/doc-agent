@@ -33,6 +33,7 @@ class Settings(BaseSettings):
         langsmith_api_key (str | None): Declared data field for this class.
         langsmith_project (str): Declared data field for this class.
         langgraph_checkpoint_db_url (str): Declared data field for this class.
+        cors_allowed_origins (str): Comma-separated browser origins allowed to call the API.
     """
 
     model_config = SettingsConfigDict(
@@ -58,6 +59,10 @@ class Settings(BaseSettings):
     langsmith_api_key: str | None = Field(validation_alias="LANGSMITH_API_KEY")
     langsmith_project: str = Field(validation_alias="LANGSMITH_PROJECT")
     langgraph_checkpoint_db_url: str = Field(validation_alias="LANGGRAPH_CHECKPOINT_DB_URL")
+    cors_allowed_origins: str = Field(
+        default=("http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"),
+        validation_alias="CORS_ALLOWED_ORIGINS",
+    )
 
     @field_validator(
         "database_url",
@@ -93,6 +98,18 @@ class Settings(BaseSettings):
         if value is None or not str(value).strip():
             raise ValueError("Environment variable value cannot be empty")
         return str(value).strip()
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """
+        Cors origins.
+
+        Purpose:
+            Returns the configured browser origins that may call the API.
+        Returns:
+            list[str]: Non-empty origins parsed from CORS_ALLOWED_ORIGINS.
+        """
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
 
 settings = Settings()  # type: ignore[call-arg]

@@ -29,3 +29,4 @@ llama-index-embeddings-huggingface
 langsmith[claude-agent-sdk]
 langgraph-checkpoint-postgres
 psycopg[binary,pool]
+openpipe

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -24,16 +25,22 @@ class FakeChatRepository:
         """Configure whether repository lookups should return a chat."""
         self.exists = exists
         self.created: list[dict[str, Any]] = []
+        self.chats: list[SimpleNamespace] = []
 
-    async def create(self, *, chat_id: str, user_id: int) -> None:
+    async def create(self, *, chat_id: str, user_id: int, name: str) -> SimpleNamespace:
         """Record chat creation without touching a database."""
-        self.created.append({"chat_id": chat_id, "user_id": user_id})
+        self.created.append({"chat_id": chat_id, "user_id": user_id, "name": name})
+        return SimpleNamespace(id=chat_id, user_id=user_id, name=name)
 
     async def get_by_id_and_user_id(self, *, chat_id: str, user_id: int) -> SimpleNamespace | None:
         """Return a fake chat only when the test config allows it."""
         if not self.exists:
             return None
         return SimpleNamespace(chat_id=chat_id, user_id=user_id)
+
+    async def list_by_user_id_with_files(self, user_id: int) -> list[SimpleNamespace]:
+        """Return fake chats for list endpoint tests."""
+        return self.chats
 
 
 class FakeUserRepository:
@@ -122,10 +129,48 @@ class FakeRunner:
 async def test_chat_service_creates_chat_response_and_repository_record() -> None:
     """Verify chat service creates a chat id and persists it via the repository."""
     repository = FakeChatRepository()
-    response = await ChatService(chat_repository=repository).create_chat(user_id=42)  # type: ignore[arg-type]
+    response = await ChatService(chat_repository=repository).create_chat(user_id=42, name="Research")  # type: ignore[arg-type]
 
     assert response.user_id == 42
-    assert repository.created == [{"chat_id": response.chat_id, "user_id": 42}]
+    assert response.name == "Research"
+    assert repository.created == [{"chat_id": response.chat_id, "user_id": 42, "name": "Research"}]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_lists_chats_with_file_process_data() -> None:
+    """Verify chat service returns nested file metadata and aggregate processing status."""
+    repository = FakeChatRepository()
+    now = datetime(2026, 6, 4, 11, 30, 0)
+    repository.chats = [
+        SimpleNamespace(
+            id="chat-1",
+            name="Research",
+            created_at=now,
+            updated_at=None,
+            files=[
+                SimpleNamespace(
+                    file_id="file-1",
+                    file_name="document.pdf",
+                    title="Document title",
+                    summary=[{"heading": "Intro"}],
+                    created_at=now,
+                    process_stages=[
+                        SimpleNamespace(stage="uploaded", status="done", created_at=now, updated_at=now),
+                        SimpleNamespace(stage="done", status="done", created_at=now, updated_at=now),
+                    ],
+                )
+            ],
+        )
+    ]
+
+    response = await ChatService(chat_repository=repository).list_chats(user_id=42)  # type: ignore[arg-type]
+
+    assert response.user_id == 42
+    assert response.chats[0].name == "Research"
+    assert response.chats[0].files[0].title == "Document title"
+    assert response.chats[0].files[0].summary == [{"heading": "Intro"}]
+    assert response.chats[0].files[0].process_status == "done"
+    assert response.chats[0].files[0].process_stages[0].stage == "uploaded"
 
 
 @pytest.mark.asyncio

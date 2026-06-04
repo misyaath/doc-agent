@@ -313,12 +313,23 @@ Creates a new chat for the authenticated user.
 
 Authentication: required.
 
+Request body:
+
+```json
+{
+  "name": "Research notes"
+}
+```
+
+If `name` is omitted, the API uses `New Chat`.
+
 Response `201`:
 
 ```json
 {
   "user_id": 1,
-  "chat_id": "8bb6bda8-b84f-4908-8a2c-06d3e016726c"
+  "chat_id": "8bb6bda8-b84f-4908-8a2c-06d3e016726c",
+  "name": "Research notes"
 }
 ```
 
@@ -326,6 +337,53 @@ Example:
 
 ```bash
 curl -X POST http://localhost:8080/chats \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Research notes"}'
+```
+
+#### `GET /chats`
+
+Lists chats for the authenticated user with uploaded file metadata and processing status.
+
+Authentication: required.
+
+Response `200`:
+
+```json
+{
+  "user_id": 1,
+  "chats": [
+    {
+      "chat_id": "8bb6bda8-b84f-4908-8a2c-06d3e016726c",
+      "name": "Research notes",
+      "created_at": "2026-06-04T11:00:00",
+      "updated_at": null,
+      "files": [
+        {
+          "file_id": "f4f2919c-77fb-4a23-bab1-cd4b95c7b7ca",
+          "file_name": "document.pdf",
+          "title": "Document title",
+          "summary": [{"heading": "Intro", "summary": "Overview"}],
+          "process_status": "done",
+          "process_stages": [
+            {
+              "stage": "uploaded",
+              "status": "done",
+              "updated_at": "2026-06-04T11:01:00"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+Example:
+
+```bash
+curl -X GET http://localhost:8080/chats \
   -H "Authorization: Bearer <access_token>"
 ```
 
