@@ -146,3 +146,25 @@ class ChatRepository:
             .order_by(Chat.created_at.desc())
         )
         return list(result.scalars().all())
+
+    async def delete(self, chat: Chat) -> None:
+        """
+        Delete.
+
+        Purpose:
+            Implements delete for the repository layer that isolates database
+                persistence from higher-level business logic.
+        Class:
+            Belongs to ChatRepository; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chat (Chat): Chat ORM object selected for deletion.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        Why Added:
+            Centralizes this behavior inside ChatRepository so related code remains
+                cohesive and testable.
+        """
+        await self._db.delete(chat)
+        await self._db.commit()

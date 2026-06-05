@@ -16,18 +16,20 @@ class FileStage(StrEnum):
 
     Attributes:
         UPLOADED (Any): Class-level value used by this class.
-        EXTRACTED (Any): Class-level value used by this class.
-        NORMALIZER (Any): Class-level value used by this class.
-        ENRICHED (Any): Class-level value used by this class.
-        EMBEDDING (Any): Class-level value used by this class.
+        EXTRACTING (Any): Class-level value used by this class.
+        ANALYSING (Any): Class-level value used by this class.
+        ORGANIZING (Any): Class-level value used by this class.
+        SUMMARIZING (Any): Class-level value used by this class.
+        SAVING (Any): Class-level value used by this class.
         DONE (Any): Class-level value used by this class.
     """
 
     UPLOADED = "uploaded"
-    EXTRACTED = "extracted"
-    NORMALIZER = "normalizer"
-    ENRICHED = "enriched"
-    EMBEDDING = "embedding"
+    EXTRACTING = "extracting"
+    ANALYSING = "analysing"
+    ORGANIZING = "organizing"
+    SUMMARIZING = "summarizing"
+    SAVING = "saving"
     DONE = "done"
 
 

@@ -722,6 +722,26 @@ class ColbertModelFactory:
         return LateInteractionTextEmbedding(self._model_name)
 
 
+class FilterChunk:
+    def __init__(self, min_characters: int = 30) -> None:
+        self.text = None
+        self.min_characters = min_characters
+
+    def is_need_to_skip(self, chunk: str) -> bool:
+        self.text = chunk
+
+        if self._is_empty_text():
+            return True
+
+        return bool(self._is_too_short())
+
+    def _is_empty_text(self) -> bool:
+        return not self.text or not self.text.strip()
+
+    def _is_too_short(self) -> bool:
+        return len(self.text.strip()) < self.min_characters
+
+
 # ============================================================
 # Qdrant Hybrid Saver
 # ============================================================
@@ -799,6 +819,7 @@ class QdrantHybridIndexSaver:
         self._client = qdrant_client.QdrantClient(url=self._config.qdrant_url)
         self._colbert_model_factory = colbert_model_factory or ColbertModelFactory(self.COLBERT_MODEL_NAME)
         self._chunking_components = chunking_components or RagChunkingComponents()
+        self._filter_chunk = FilterChunk(100)
 
     def _upsert_points_in_batches(
         self,
@@ -881,7 +902,8 @@ class QdrantHybridIndexSaver:
             for splitter_index, node in enumerate(nodes):
                 chunk_text = node.get_content()
 
-                print(f"chunk_text: {len(chunk_text)}")
+                if self._filter_chunk.is_need_to_skip(chunk_text):
+                    continue
 
                 point_id = self._point_id_builder.build(
                     doc_id=self._config.doc_id or "unknown_doc",

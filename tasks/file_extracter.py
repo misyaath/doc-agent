@@ -87,7 +87,7 @@ class ExtractionTask:
         stage (Any): Class-level value used by this class.
     """
 
-    stage = FileStage.EXTRACTED.value
+    stage = FileStage.EXTRACTING.value
 
     def run(self, ctx: FileTaskContext) -> None:
         """
@@ -141,7 +141,7 @@ class MarkdownVisionTask:
         stage (Any): Class-level value used by this class.
     """
 
-    stage = FileStage.NORMALIZER.value
+    stage = FileStage.ANALYSING.value
 
     def run(self, ctx: FileTaskContext) -> None:
         """
@@ -192,7 +192,7 @@ class HeadingGroupingTask:
         stage (Any): Class-level value used by this class.
     """
 
-    stage = FileStage.ENRICHED.value
+    stage = FileStage.ORGANIZING.value
 
     def run(self, ctx: FileTaskContext) -> None:
         """
@@ -236,7 +236,22 @@ class SectionSummarizationTask:
         documented component instead of duplicating the same logic elsewhere.
     """
 
-    def run(self, ctx: FileTaskContext, loop: AbstractEventLoop) -> None:
+    stage = FileStage.SUMMARIZING.value
+
+    def __init__(self, loop: AbstractEventLoop) -> None:
+        """
+        Initialize the object with its required dependencies.
+
+        Purpose:
+            Stores the event loop used by synchronous repository update helpers.
+        Args:
+            loop (AbstractEventLoop): Event loop used for async database calls.
+        Returns:
+            None: Performs work through side effects and does not return a value.
+        """
+        self._loop = loop
+
+    def run(self, ctx: FileTaskContext) -> None:
         """
         Run.
 
@@ -249,7 +264,6 @@ class SectionSummarizationTask:
         Args:
             self (Self): Current instance that owns the operation state.
             ctx (FileTaskContext): Input value for the ctx parameter.
-            loop (AbstractEventLoop): Input value for the loop parameter.
         Returns:
             None: Performs work through side effects and does not return a value.
         Why Added:
@@ -281,7 +295,7 @@ class SectionSummarizationTask:
             file_id=ctx.file_id,
             title=doc_title,
             summary=summary_json,
-            loop=loop,
+            loop=self._loop,
         )
         logger.info("Section summarization completed", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id})
 
@@ -301,7 +315,7 @@ class EmbeddingTask:
         stage (Any): Class-level value used by this class.
     """
 
-    stage = FileStage.EMBEDDING.value
+    stage = FileStage.SAVING.value
 
     def run(self, ctx: FileTaskContext) -> None:
         """
@@ -476,12 +490,7 @@ def process_uploaded_file(
         _run_staged_task(MarkdownVisionTask(), ctx, loop)
         _run_staged_task(HeadingGroupingTask(), ctx, loop)
 
-        try:
-            SectionSummarizationTask().run(ctx, loop)
-        except Exception:
-            logger.exception("Section summarization failed", extra={"chat_id": ctx.chat_id, "file_id": ctx.file_id})
-            raise
-
+        _run_staged_task(SectionSummarizationTask(loop), ctx, loop)
         _run_staged_task(EmbeddingTask(), ctx, loop)
         _upsert_stage_status_sync(
             file_id=ctx.file_id,

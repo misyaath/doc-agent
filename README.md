@@ -437,6 +437,35 @@ curl -X GET http://localhost:8080/chats/8bb6bda8-b84f-4908-8a2c-06d3e016726c \
   -H "Authorization: Bearer <access_token>"
 ```
 
+#### `DELETE /chats/{chat_id}`
+
+Deletes a chat owned by the authenticated user.
+
+Cleanup order:
+
+1. Deletes Qdrant points where `chat_id` matches the requested chat.
+2. Deletes uploaded files recorded in the database.
+3. Deletes extracted artifacts from `extracted_files/{chat_id}`.
+4. Deletes the Postgres chat row, cascading file and process-stage records.
+
+Authentication: required.
+
+Response `200`:
+
+```json
+{
+  "chat_id": "8bb6bda8-b84f-4908-8a2c-06d3e016726c",
+  "deleted": true
+}
+```
+
+Example:
+
+```bash
+curl -X DELETE http://localhost:8080/chats/8bb6bda8-b84f-4908-8a2c-06d3e016726c \
+  -H "Authorization: Bearer <access_token>"
+```
+
 ### Files Service
 
 #### `POST /files/upload`
@@ -675,12 +704,15 @@ curl -X POST http://localhost:8080/tasks/abc123/retry \
 
 When PDFs are uploaded, the Celery task `process_uploaded_file` runs these stages:
 
-1. Extract PDF structure/assets with Docling.
-2. Add image/table vision analysis.
-3. Group markdown by main headings.
-4. Build section summaries.
-5. Build and save vector embeddings to Qdrant.
-6. Update per-stage status in the database.
+1. `uploaded`: the file row is created and initial processing is queued.
+2. `extracting`: extract PDF structure/assets with Docling.
+3. `analysing`: add image/table vision analysis.
+4. `organizing`: group markdown by main headings.
+5. `summarizing`: build section summaries.
+6. `saving`: build and save vector embeddings to Qdrant.
+7. `done`: mark the full pipeline as completed.
+
+Each runtime stage writes its status to `file_process_stages`.
 
 Generated artifacts are stored under ignored local directories such as `uploads/` and `extracted_files/`.
 

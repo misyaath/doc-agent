@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from domain.file_process import FileStage, FileStageStatus
 from schemas.agent import AgentChatRequest, AgentChatResponse
-from schemas.chat import ChatCreateRequest, ChatCreateResponse
+from schemas.chat import ChatCreateRequest, ChatCreateResponse, ChatDeleteResponse
 from schemas.file import FileUploadItemResponse, FileUploadResponse
 from schemas.user import TokenResponse, UserLoginRequest, UserRegisterRequest, UserRegisterResponse
 from services.auth_service import create_access_token, hash_password, verify_jwt, verify_password
@@ -16,10 +16,11 @@ from services.auth_service import create_access_token, hash_password, verify_jwt
 def test_file_stage_enums_have_expected_values() -> None:
     """Verify file stage enums have expected values."""
     assert FileStage.UPLOADED == "uploaded"
-    assert FileStage.EXTRACTED == "extracted"
-    assert FileStage.NORMALIZER == "normalizer"
-    assert FileStage.ENRICHED == "enriched"
-    assert FileStage.EMBEDDING == "embedding"
+    assert FileStage.EXTRACTING == "extracting"
+    assert FileStage.ANALYSING == "analysing"
+    assert FileStage.ORGANIZING == "organizing"
+    assert FileStage.SUMMARIZING == "summarizing"
+    assert FileStage.SAVING == "saving"
     assert FileStage.DONE == "done"
     assert FileStageStatus.WAITING == "waiting"
     assert FileStageStatus.STARTED == "started"
@@ -52,6 +53,7 @@ def test_response_schemas_serialize_expected_fields() -> None:
     user = UserRegisterResponse(id=1, full_name="Jane Doe", email="jane@example.com", is_active=True, is_verified=False)
     token = TokenResponse(access_token="token", expires_in=3600)
     chat = ChatCreateResponse(user_id=1, chat_id="chat-1", name="Research notes")
+    deleted_chat = ChatDeleteResponse(chat_id="chat-1", deleted=True)
     file_item = FileUploadItemResponse(
         file_id="file-1",
         chat_id="chat-1",
@@ -66,6 +68,7 @@ def test_response_schemas_serialize_expected_fields() -> None:
     assert token.token_type == "bearer"
     assert chat.chat_id == "chat-1"
     assert chat.name == "Research notes"
+    assert deleted_chat.deleted is True
     assert upload.files[0].file_id == "file-1"
     assert agent.retrieved_chunks == []
 

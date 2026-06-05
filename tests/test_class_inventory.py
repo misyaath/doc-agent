@@ -91,6 +91,7 @@ EXPECTED_CLASSES: dict[str, set[str]] = {
         "CompactPayloadBuilder",
         "DocumentIdentityBuilder",
         "EmbeddingModelFactory",
+        "FilterChunk",
         "JsonSafetyCleaner",
         "MarkdownRagChunk",
         "MarkdownRagQdrantIngestionService",
@@ -144,6 +145,7 @@ EXPECTED_CLASSES: dict[str, set[str]] = {
     "schemas.chat": {
         "ChatCreateRequest",
         "ChatCreateResponse",
+        "ChatDeleteResponse",
         "ChatDetailResponse",
         "ChatFileProcessStageResponse",
         "ChatFileResponse",

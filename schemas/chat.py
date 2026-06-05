@@ -266,3 +266,23 @@ class ChatDetailResponse(BaseModel):
     updated_at: datetime | None
     files: list[ChatFileResponse]
     history: list[ChatHistoryMessageResponse]
+
+
+class ChatDeleteResponse(BaseModel):
+    """
+    Chat Delete Response.
+
+    Purpose:
+        Defines ChatDeleteResponse in the Pydantic schema layer that validates API
+            request and response payloads.
+    Why Added:
+        Keeps this responsibility explicit so callers can depend on a named,
+        documented component instead of duplicating the same logic elsewhere.
+
+    Attributes:
+        chat_id (str): Declared data field for this class.
+        deleted (bool): Declared data field for this class.
+    """
+
+    chat_id: str
+    deleted: bool

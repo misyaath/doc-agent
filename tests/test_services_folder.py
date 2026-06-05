@@ -27,6 +27,8 @@ class FakeChatRepository:
         self.exists = exists
         self.created: list[dict[str, Any]] = []
         self.chats: list[SimpleNamespace] = []
+        self.deleted: list[str] = []
+        self.events: list[str] = []
 
     async def create(self, *, chat_id: str, user_id: int, name: str) -> SimpleNamespace:
         """Record chat creation without touching a database."""
@@ -48,6 +50,11 @@ class FakeChatRepository:
     async def list_by_user_id_with_files(self, user_id: int) -> list[SimpleNamespace]:
         """Return fake chats for list endpoint tests."""
         return self.chats
+
+    async def delete(self, chat: SimpleNamespace) -> None:
+        """Record database chat deletion without touching a database."""
+        self.deleted.append(chat.id)
+        self.events.append("postgres")
 
 
 class FakeUserRepository:
@@ -219,6 +226,45 @@ async def test_chat_service_returns_chat_detail_with_langgraph_history() -> None
     assert response.files[0].process_status == "done"
     assert response.history[0].role == "user"
     assert response.history[0].content == "question for chat-1"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_deletes_qdrant_files_then_database() -> None:
+    """Verify chat deletion cleans external resources before deleting the database row."""
+    repository = FakeChatRepository()
+    now = datetime(2026, 6, 4, 11, 30, 0)
+    repository.chats = [
+        SimpleNamespace(
+            id="chat-1",
+            name="Research",
+            created_at=now,
+            updated_at=None,
+            files=[
+                SimpleNamespace(
+                    file_id="file-1",
+                    file_name="document.pdf",
+                    title=None,
+                    summary=None,
+                    full_path="/tmp/document.pdf",
+                    created_at=now,
+                    process_stages=[],
+                )
+            ],
+        )
+    ]
+
+    service = ChatService(
+        chat_repository=repository,  # type: ignore[arg-type]
+        qdrant_cleanup=lambda chat_id: repository.events.append(f"qdrant:{chat_id}"),
+        file_artifact_cleanup=lambda chat: repository.events.append(f"files:{chat.id}"),
+    )
+
+    response = await service.delete_chat(chat_id="chat-1", user_id=42)
+
+    assert response.chat_id == "chat-1"
+    assert response.deleted is True
+    assert repository.deleted == ["chat-1"]
+    assert repository.events == ["qdrant:chat-1", "files:chat-1", "postgres"]
 
 
 @pytest.mark.asyncio

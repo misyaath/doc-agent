@@ -486,10 +486,7 @@ class AgentService:
             )
         except Exception as e:
             yield sse_event("error", {"message": f"Prepare chat failed {str(e)}"})
-
-        # print(f"document_summary: {document_summary}")
         try:
-            yield sse_event("debug", {"message": "started chat with ollama"})
             for item in self._runner.stream(
                 prompt=payload.prompt,
                 chat_id=payload.chat_id,

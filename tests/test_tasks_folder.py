@@ -209,7 +209,7 @@ def test_section_summarization_task_updates_file_summary(
     monkeypatch.setattr(file_tasks, "FileSummaryRepository", FakeFileSummaryRepository)
 
     try:
-        SectionSummarizationTask().run(ctx, loop)
+        SectionSummarizationTask(loop).run(ctx)
     finally:
         loop.close()
 
@@ -224,4 +224,69 @@ def test_section_summarization_task_updates_file_summary(
             "summary": [{"heading": "Intro", "summary": "Short summary"}],
             "loop": loop,
         }
+    ]
+
+
+def test_section_summarization_stage_status_updates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Verify section summarization writes processing and done stage statuses."""
+    ctx = _task_context(tmp_path)
+    loop = asyncio.new_event_loop()
+    updates: list[dict[str, str]] = []
+
+    class FakeSectionSummarizationTask:
+        """Section summarization stage double for status tests."""
+
+        stage = "summarizing"
+
+        def run(self, ctx: FileTaskContext) -> None:
+            """Perform a successful no-op summarization stage."""
+            assert ctx.file_id == "file-1"
+
+    def fake_upsert_stage_status_sync(*, file_id: str, stage_name: str, status: str, loop: Any) -> None:
+        """Capture stage status updates."""
+        updates.append({"file_id": file_id, "stage_name": stage_name, "status": status})
+
+    monkeypatch.setattr(file_tasks, "_upsert_stage_status_sync", fake_upsert_stage_status_sync)
+
+    try:
+        file_tasks._run_staged_task(FakeSectionSummarizationTask(), ctx, loop)
+    finally:
+        loop.close()
+
+    assert updates == [
+        {"file_id": "file-1", "stage_name": "summarizing", "status": "processing"},
+        {"file_id": "file-1", "stage_name": "summarizing", "status": "done"},
+    ]
+
+
+def test_section_summarization_stage_status_fails_on_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Verify section summarization writes failed status when the stage raises."""
+    ctx = _task_context(tmp_path)
+    loop = asyncio.new_event_loop()
+    updates: list[dict[str, str]] = []
+
+    class FakeSectionSummarizationTask:
+        """Failing section summarization stage double for status tests."""
+
+        stage = "summarizing"
+
+        def run(self, ctx: FileTaskContext) -> None:
+            """Raise an error to exercise failed status updates."""
+            raise RuntimeError("summary failed")
+
+    def fake_upsert_stage_status_sync(*, file_id: str, stage_name: str, status: str, loop: Any) -> None:
+        """Capture stage status updates."""
+        updates.append({"file_id": file_id, "stage_name": stage_name, "status": status})
+
+    monkeypatch.setattr(file_tasks, "_upsert_stage_status_sync", fake_upsert_stage_status_sync)
+
+    try:
+        with pytest.raises(RuntimeError, match="summary failed"):
+            file_tasks._run_staged_task(FakeSectionSummarizationTask(), ctx, loop)
+    finally:
+        loop.close()
+
+    assert updates == [
+        {"file_id": "file-1", "stage_name": "summarizing", "status": "processing"},
+        {"file_id": "file-1", "stage_name": "summarizing", "status": "failed"},
     ]

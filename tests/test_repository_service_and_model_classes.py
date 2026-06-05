@@ -111,11 +111,11 @@ def test_celery_task_context_and_stage_classes() -> None:
     )
     assert str(ctx.file_base_path) == "extracted_files/chat-1/file-1"
 
-    assert ExtractionTask.stage == "extracted"
-    assert MarkdownVisionTask.stage == "normalizer"
-    assert HeadingGroupingTask.stage == "enriched"
-    assert not hasattr(SectionSummarizationTask, "stage")
-    assert EmbeddingTask.stage == "embedding"
+    assert ExtractionTask.stage == "extracting"
+    assert MarkdownVisionTask.stage == "analysing"
+    assert HeadingGroupingTask.stage == "organizing"
+    assert SectionSummarizationTask.stage == "summarizing"
+    assert EmbeddingTask.stage == "saving"
 
 
 def test_retry_task_request_defaults() -> None:

@@ -666,7 +666,7 @@ class RagGraphFactory:
             model=llm_model,
             base_url=ollama_base_url,
             temperature=0,
-            num_ctx=32768,
+            num_ctx=98304,
             disable_streaming=False,
         )
 

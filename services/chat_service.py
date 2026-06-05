@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from pathlib import Path
+from shutil import rmtree
 from typing import Any
 
 from anyio import to_thread
 from fastapi import Depends, HTTPException, status
+from qdrant_client import QdrantClient
+from qdrant_client.http import models as qdrant_models
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.settings import settings
 from database import get_db
 from domain.file_process import FileStage, FileStageStatus
 from repositories.chat_repository import ChatRepository
 from schemas.chat import (
     ChatCreateResponse,
+    ChatDeleteResponse,
     ChatDetailResponse,
     ChatFileProcessStageResponse,
     ChatFileResponse,
@@ -188,6 +194,58 @@ def _chat_files_response(chat: Any) -> list[ChatFileResponse]:
     ]
 
 
+def _delete_qdrant_chat_points(chat_id: str) -> None:
+    """
+    Delete qdrant chat points.
+
+    Purpose:
+        Deletes all vector points associated with a chat before local/database cleanup.
+    Args:
+        chat_id (str): Chat/session identifier used to scope vector records.
+    Returns:
+        None: Performs work through side effects and does not return a value.
+    """
+    client = QdrantClient(url=settings.qdrant_url)
+    if not client.collection_exists(settings.rag_collection_name):
+        return
+
+    client.delete(
+        collection_name=settings.rag_collection_name,
+        points_selector=qdrant_models.FilterSelector(
+            filter=qdrant_models.Filter(
+                must=[
+                    qdrant_models.FieldCondition(
+                        key="chat_id",
+                        match=qdrant_models.MatchValue(value=chat_id),
+                    )
+                ]
+            )
+        ),
+        wait=True,
+    )
+
+
+def _delete_chat_file_artifacts(chat: Any) -> None:
+    """
+    Delete chat file artifacts.
+
+    Purpose:
+        Deletes uploaded source files and extracted artifacts for a chat.
+    Args:
+        chat (Any): Chat ORM object with eager-loaded files.
+    Returns:
+        None: Performs work through side effects and does not return a value.
+    """
+    for file in chat.files:
+        full_path = Path(file.full_path)
+        if full_path.is_file() or full_path.is_symlink():
+            full_path.unlink()
+
+    extracted_path = Path("extracted_files") / str(chat.id)
+    if extracted_path.exists():
+        rmtree(extracted_path)
+
+
 class ChatService:
     """
     Chat Service.
@@ -204,6 +262,8 @@ class ChatService:
         self,
         chat_repository: ChatRepository,
         chat_history_loader: Callable[[str], list[ChatHistoryMessageResponse]] = _load_langgraph_chat_history,
+        qdrant_cleanup: Callable[[str], None] = _delete_qdrant_chat_points,
+        file_artifact_cleanup: Callable[[Any], None] = _delete_chat_file_artifacts,
     ) -> None:
         """
         Initialize the object with its required dependencies.
@@ -220,6 +280,10 @@ class ChatService:
                 parameter.
             chat_history_loader (Callable[[str], list[ChatHistoryMessageResponse]]):
                 Function used to load persisted LangGraph chat history.
+            qdrant_cleanup (Callable[[str], None]): Function used to delete Qdrant
+                points for the chat.
+            file_artifact_cleanup (Callable[[Any], None]): Function used to delete
+                uploaded and extracted files for the chat.
         Returns:
             None: Performs work through side effects and does not return a value.
         Why Added:
@@ -228,6 +292,8 @@ class ChatService:
         """
         self._chat_repository = chat_repository
         self._chat_history_loader = chat_history_loader
+        self._qdrant_cleanup = qdrant_cleanup
+        self._file_artifact_cleanup = file_artifact_cleanup
 
     async def create_chat(self, *, user_id: int, name: str = "New Chat") -> ChatCreateResponse:
         """
@@ -328,6 +394,49 @@ class ChatService:
             files=_chat_files_response(chat),
             history=history,
         )
+
+    async def delete_chat(self, *, chat_id: str, user_id: int) -> ChatDeleteResponse:
+        """
+        Delete chat.
+
+        Purpose:
+            Implements delete_chat for the business-service layer that coordinates
+                external vector cleanup, filesystem cleanup, and database deletion.
+        Class:
+            Belongs to ChatService; uses that class state and dependencies when
+                available.
+        Args:
+            self (Self): Current instance that owns the operation state.
+            chat_id (str): Chat/session identifier used to scope deletion.
+            user_id (int): Authenticated user identifier used to scope the operation.
+        Returns:
+            ChatDeleteResponse: API response model returned to the client.
+        Why Added:
+            Centralizes this behavior inside ChatService so related code remains
+                cohesive and testable.
+        """
+        chat = await self._chat_repository.get_by_id_and_user_id_with_files(chat_id=chat_id, user_id=user_id)
+        if chat is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+        try:
+            await to_thread.run_sync(lambda: self._qdrant_cleanup(chat_id))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to delete chat vectors",
+            ) from exc
+
+        try:
+            await to_thread.run_sync(lambda: self._file_artifact_cleanup(chat))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete chat files",
+            ) from exc
+
+        await self._chat_repository.delete(chat)
+        return ChatDeleteResponse(chat_id=chat_id, deleted=True)
 
 
 def get_chat_service(db: AsyncSession = Depends(get_db)) -> ChatService:
