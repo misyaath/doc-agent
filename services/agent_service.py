@@ -19,6 +19,15 @@ from schemas.agent import AgentChatRequest, AgentChatResponse
 from utils.sse import sse_event
 from utils.stream_helper import node_label
 
+_DONE = object()
+
+
+def next_or_done(iterator):
+    try:
+        return next(iterator)
+    except StopIteration:
+        return _DONE
+
 
 class FileSummaryCacheService:
     """
@@ -487,32 +496,57 @@ class AgentService:
         except Exception as e:
             yield sse_event("error", {"message": f"Prepare chat failed {str(e)}"})
         try:
-            for item in self._runner.stream(
+            iterator = self._runner.stream(
                 prompt=payload.prompt,
                 chat_id=payload.chat_id,
                 document_summary=document_summary,
-            ):
-                if item["type"] == "token":
+            )
+
+            while True:
+                item = await to_thread.run_sync(next_or_done, iterator)
+
+                if item is _DONE:
+                    break
+
+                if not isinstance(item, dict):
+                    continue
+
+                item_type = item.get("type")
+
+                if item_type == "token":
                     yield sse_event(
                         "token",
                         {
-                            "text": item["text"],
+                            "text": item.get("text", ""),
+                            "metadata": item.get("metadata", {}),
                         },
                     )
-                elif item["type"] == "step":
+
+                elif item_type == "step":
                     yield sse_event(
                         "step",
                         {
-                            "message": item["text"],
+                            "message": item.get("text", "Working"),
                         },
                     )
-                elif item["type"] == "done":
+
+                elif item_type == "done":
                     yield sse_event(
                         "done",
                         {
                             "chat_id": payload.chat_id,
                         },
                     )
+                    return
+
+                elif item_type == "error":
+                    yield sse_event(
+                        "error",
+                        {
+                            "message": item.get("error", "Unknown error"),
+                        },
+                    )
+                    return
 
         except Exception as exc:
             yield sse_event(

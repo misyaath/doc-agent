@@ -543,8 +543,8 @@ class RetrievalService:
         chunks = self.retriever.retrieve_many(
             queries,
             chat_id=chat_id,
-            limit_per_query=100,
-            final_limit=100,
+            limit_per_query=20,
+            final_limit=20,
         )
         context = self.context_formatter.format(chunks)
         return cast(list[RetrievedChunk], chunks), context
@@ -611,7 +611,7 @@ class AnswerGenerationService:
 
         messages = [
             SystemMessage(content=self.prompts.build_system_prompt()),
-            *history[-8:],
+            *history[-4:],
             HumanMessage(content=self.prompts.build_answer_prompt(question, context)),
         ]
         response = self.llm.invoke(messages)
@@ -666,7 +666,7 @@ class RagGraphFactory:
             model=llm_model,
             base_url=ollama_base_url,
             temperature=0,
-            num_ctx=98304,
+            num_ctx=32768,
             disable_streaming=False,
         )
 
